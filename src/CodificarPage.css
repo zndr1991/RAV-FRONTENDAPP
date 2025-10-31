@@ -266,7 +266,7 @@
   white-space: pre-line;
   pointer-events: none;
   max-width: 320px;
-  transform: translate(12px, -50%);
+  transform: translate(12px, -200%);
   z-index: 2000;
 }
 
