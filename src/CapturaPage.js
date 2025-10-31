@@ -10,6 +10,8 @@ import { API_BASE_URL, SOCKET_URL } from './config';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
+const CAPTURA_EDITABLE_FIELDS = new Set(['CODIGO', 'CHOFER']);
+
 const normalizarTaller = (valor) => {
   if (!valor) return '';
   return valor.toString().trim().toLowerCase().replace(/\s+/g, ' ');
@@ -296,7 +298,10 @@ function CapturaPage() {
   const puedeVer = rol === 'supervisor' || rol === 'captura';
 
   const columnDefs = useMemo(
-    () => baseColumnDefs.map(column => ({ ...column })),
+    () => baseColumnDefs.map((column) => ({
+      ...column,
+      editable: CAPTURA_EDITABLE_FIELDS.has(column.field) || false,
+    })),
     []
   );
 
@@ -418,6 +423,35 @@ function CapturaPage() {
     if (!gridRef.current) return;
     const selectedRows = gridRef.current.api.getSelectedRows();
     setSelectedCount(selectedRows.length);
+  }, []);
+
+  const handleCellValueChanged = useCallback((params) => {
+    const { data, newValue, oldValue, colDef, node, api } = params || {};
+    const field = colDef?.field;
+    if (!field || !CAPTURA_EDITABLE_FIELDS.has(field)) return;
+    const formattedNewValue = newValue == null ? '' : String(newValue);
+    const formattedOldValue = oldValue == null ? '' : String(oldValue);
+    if (formattedNewValue === formattedOldValue) return;
+
+    setRowData((prev) => (
+      Array.isArray(prev)
+        ? prev.map((row) => (row.id === data?.id ? { ...row, [field]: formattedNewValue } : row))
+        : prev
+    ));
+
+    if (api && node && Number.isInteger(node.rowIndex)) {
+      api.ensureIndexVisible(node.rowIndex, 'middle');
+    }
+
+    if (!data?.id) return;
+
+    fetch(`${API_BASE_URL}/api/basedatos/captura/actualizar-celda`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: data.id, field, value: formattedNewValue })
+    }).catch(() => {
+      setError('No se pudo guardar el cambio. Intenta nuevamente.');
+    });
   }, []);
 
   const handleMarkAsGenerated = useCallback(async () => {
@@ -690,6 +724,8 @@ function CapturaPage() {
               rowHeight={28}
               localeText={localeText}
               onSelectionChanged={handleSelectionChanged}
+              onCellValueChanged={handleCellValueChanged}
+              getRowId={(params) => (params?.data?.id ? String(params.data.id) : undefined)}
             />
           </div>
         </div>

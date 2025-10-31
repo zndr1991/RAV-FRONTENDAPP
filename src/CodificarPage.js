@@ -120,7 +120,7 @@ const columnDefs = [
   },
   { headerName: "COSTO", field: "COSTO", width: 100, editable: true },
   { headerName: "LOCALIDAD", field: "LOCALIDAD", width: 150 },
-  { headerName: "CHOFER", field: "CHOFER", width: 120 },
+  { headerName: "CHOFER", field: "CHOFER", width: 120, editable: true },
   { headerName: "COMPAQ", field: "COMPAQ", width: 120 },
   { headerName: "OC", field: "OC", width: 100 },
   { headerName: "NUEVO ESTATUS", field: "NUEVO_ESTATUS", width: 150 },
@@ -171,8 +171,8 @@ const CodificarPage = () => {
           : row
       )
     );
-
-    api.ensureIndexVisible(node.rowIndex);
+  // Keep the edited record roughly in place instead of snapping the row to the top.
+  api.ensureIndexVisible(node.rowIndex, 'middle');
 
   fetch(`${API_BASE_URL}/api/excel/actualizar-celda`, {
       method: "POST",
