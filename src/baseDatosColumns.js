@@ -1,16 +1,18 @@
 function excelDateToJSDate(serial) {
-  if (typeof serial !== 'number') return '';
-  const utcDays = Math.floor(serial - 25569);
-  const utcValue = utcDays * 86400;
-  const dateInfo = new Date(utcValue * 1000);
-  const fractionalDay = serial - Math.floor(serial);
-  let totalSeconds = Math.round(86400 * fractionalDay);
-  const seconds = totalSeconds % 60;
-  totalSeconds = (totalSeconds - seconds) / 60;
-  const minutes = totalSeconds % 60;
-  const hours = (totalSeconds - minutes) / 60;
-  dateInfo.setHours(hours, minutes, seconds);
-  return dateInfo;
+  if (typeof serial !== 'number' || Number.isNaN(serial)) return '';
+
+  const milliseconds = Math.round((serial - 25569) * 86400 * 1000);
+  const date = new Date(milliseconds);
+  if (Number.isNaN(date.getTime())) return '';
+
+  return new Date(
+    date.getUTCFullYear(),
+    date.getUTCMonth(),
+    date.getUTCDate(),
+    date.getUTCHours(),
+    date.getUTCMinutes(),
+    date.getUTCSeconds()
+  );
 }
 
 export function parseFechaDDMMYYYY(fechaStr) {

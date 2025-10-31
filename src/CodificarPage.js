@@ -10,18 +10,20 @@ import { API_BASE_URL, SOCKET_URL } from './config';
 ModuleRegistry.registerModules([AllCommunityModule]);
 
 function excelDateToJSDate(serial) {
-  if (typeof serial !== 'number') return '';
-  const utc_days = Math.floor(serial - 25569);
-  const utc_value = utc_days * 86400;
-  const date_info = new Date(utc_value * 1000);
-  const fractional_day = serial - Math.floor(serial);
-  let total_seconds = Math.round(86400 * fractional_day);
-  const seconds = total_seconds % 60;
-  total_seconds -= seconds;
-  const hours = Math.floor(total_seconds / (60 * 60));
-  const minutes = Math.floor((total_seconds - (hours * 60 * 60)) / 60);
-  date_info.setHours(hours, minutes, seconds);
-  return date_info;
+  if (typeof serial !== 'number' || Number.isNaN(serial)) return '';
+
+  const milliseconds = Math.round((serial - 25569) * 86400 * 1000);
+  const date = new Date(milliseconds);
+  if (Number.isNaN(date.getTime())) return '';
+
+  return new Date(
+    date.getUTCFullYear(),
+    date.getUTCMonth(),
+    date.getUTCDate(),
+    date.getUTCHours(),
+    date.getUTCMinutes(),
+    date.getUTCSeconds()
+  );
 }
 
 function parseFechaDDMMYYYY(fechaStr) {
@@ -501,10 +503,13 @@ const CodificarPage = () => {
         `.ag-row[row-index="${params.node.rowIndex}"] .ag-cell[col-id="CODIGO"]`
       );
       const cellRect = cell ? cell.getBoundingClientRect() : null;
+      const tooltipX = cellRect ? cellRect.right + window.scrollX + 16 : 0;
+      const tooltipY = cellRect ? cellRect.top + window.scrollY + (cellRect.height / 2) : 0;
+
       setEditTooltip({
         show: true,
-        x: cellRect ? cellRect.right + window.scrollX + 8 : 0,
-        y: cellRect ? cellRect.top + window.scrollY : 0,
+        x: tooltipX,
+        y: tooltipY,
         value: `PEDIDO: ${params.data.PEDIDO || ""}
 NOMBRE COMERCIAL TALLER: ${params.data.NOMBRE_COMERCIAL_TALLER || ""}
 MODELO: ${params.data.MODELO || ""}

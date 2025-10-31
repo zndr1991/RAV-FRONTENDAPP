@@ -37,6 +37,7 @@ const PendientesLocalPage = () => {
   const [baseDataRaw, setBaseDataRaw] = useState([]);
   const [nuevoEstatusData, setNuevoEstatusData] = useState([]);
   const [searchText, setSearchText] = useState('');
+  const [searchMode, setSearchMode] = useState('contains');
   const [showColumnList, setShowColumnList] = useState(false);
 
   const usuario = useMemo(() => {
@@ -134,10 +135,13 @@ const PendientesLocalPage = () => {
     return permittedRows.filter(row =>
       Object.values(row).some(val => {
         if (val == null) return false;
-        return String(val).toLowerCase().includes(lower);
+        const cell = String(val).toLowerCase();
+        return searchMode === 'exact'
+          ? cell === lower
+          : cell.includes(lower);
       })
     );
-  }, [permittedRows, searchText]);
+  }, [permittedRows, searchMode, searchText]);
 
   const cargarDatos = useCallback(() => {
     fetch(`${API_BASE_URL}/api/basedatos/obtener`)
@@ -169,19 +173,48 @@ const PendientesLocalPage = () => {
       .catch(() => setNuevoEstatusData([]));
   }, []);
 
+  const aplicarActualizacionSocket = useCallback((payload) => {
+    if (!payload || payload.type !== 'estatus_update') return false;
+    const { id, field, value } = payload;
+    if (!id || !field || !EDITABLE_FIELDS.has(field)) return false;
+
+    let encontrado = false;
+    let cambioRealizado = false;
+    setBaseDataRaw(prev => {
+      if (!Array.isArray(prev) || !prev.length) return prev;
+      const siguiente = prev.map(row => {
+        if (!row || row.id !== id) return row;
+        encontrado = true;
+        const nuevoValor = value == null ? '' : String(value);
+        if (row[field] === nuevoValor) return row;
+        cambioRealizado = true;
+        return { ...row, [field]: nuevoValor };
+      });
+      return cambioRealizado ? siguiente : prev;
+    });
+    return encontrado;
+  }, []);
+
   useEffect(() => {
     cargarDatos();
     cargarNuevoEstatus();
     const socket = socketIOClient(SOCKET_URL);
-    socket.on('excel_data_updated', cargarDatos);
+    const handleExcelUpdated = (payload) => {
+      const manejado = aplicarActualizacionSocket(payload);
+      if (!manejado) {
+        cargarDatos();
+      }
+    };
+    socket.on('excel_data_updated', handleExcelUpdated);
     socket.on('nuevo_estatus_updated', () => {
       cargarNuevoEstatus();
       cargarDatos();
     });
     return () => {
+      socket.off('excel_data_updated', handleExcelUpdated);
       socket.disconnect();
     };
-  }, [cargarDatos, cargarNuevoEstatus]);
+  }, [aplicarActualizacionSocket, cargarDatos, cargarNuevoEstatus]);
 
   useEffect(() => {
     const storedRaw = localStorage.getItem(COLUMN_VISIBILITY_STORAGE_KEY);
@@ -232,6 +265,105 @@ const PendientesLocalPage = () => {
       return { ...prev, [field]: !currentlyVisible };
     });
   }, [columnVisibilityLoaded]);
+
+  const handlePrint = useCallback(() => {
+    if (typeof window === 'undefined') return;
+
+    const visibleColumns = columnDefs.filter(col => (
+      col.field && (columnVisibilityLoaded ? columnVisibility[col.field] !== false : true)
+    ));
+
+    if (!visibleColumns.length) {
+      alert('No hay columnas visibles para imprimir.');
+      return;
+    }
+
+    if (!Array.isArray(filteredData) || !filteredData.length) {
+      alert('No hay datos para imprimir.');
+      return;
+    }
+
+    const escapeHtml = (raw) => {
+      const value = raw == null ? '' : String(raw);
+      return value
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    };
+
+    const headerHtml = visibleColumns
+      .map(col => `<th>${escapeHtml(col.headerName || col.field)}</th>`)
+      .join('');
+
+    const rowsHtml = filteredData
+      .map(row => {
+        const cells = visibleColumns
+          .map(col => `<td>${escapeHtml(row[col.field])}</td>`)
+          .join('');
+        return `<tr>${cells}</tr>`;
+      })
+      .join('');
+
+    const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Pendientes Local</title>
+  <style>
+    @page { size: landscape; margin: 12mm; }
+    body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
+    h1 { font-size: 17px; margin: 0 0 10px 0; }
+    table { border-collapse: collapse; width: auto; min-width: 100%; table-layout: auto; }
+    th, td {
+      border: 1px solid #333;
+      padding: 3px 6px;
+  font-size: 9.5px;
+  min-width: 60px;
+      word-break: break-word;
+      white-space: normal;
+    }
+    th { background: #1f2937; color: #fff; text-align: left; }
+    tr:nth-child(even) { background: #f3f4f6; }
+  </style>
+</head>
+<body style="margin:12mm;">
+  <h1>Pendientes Local</h1>
+  <table>
+    <thead><tr>${headerHtml}</tr></thead>
+    <tbody>${rowsHtml}</tbody>
+  </table>
+</body>
+</html>`;
+
+    try {
+      const iframe = document.createElement('iframe');
+      iframe.style.position = 'fixed';
+      iframe.style.right = '0';
+      iframe.style.bottom = '0';
+      iframe.style.width = '0';
+      iframe.style.height = '0';
+      iframe.style.border = '0';
+      document.body.appendChild(iframe);
+
+      const doc = iframe.contentWindow?.document;
+      if (!doc) throw new Error('No se pudo crear el documento de impresión.');
+
+      doc.open();
+      doc.write(html);
+      doc.close();
+      iframe.contentWindow?.focus();
+      iframe.contentWindow?.print();
+
+      setTimeout(() => {
+        document.body.removeChild(iframe);
+      }, 1000);
+    } catch (err) {
+      console.error('No se pudo preparar la impresión:', err);
+      alert('No se pudo preparar la impresión.');
+    }
+  }, [columnDefs, columnVisibility, columnVisibilityLoaded, filteredData]);
 
   const handleCellEdit = useCallback((params) => {
     if (revertingRef.current) return;
@@ -296,12 +428,27 @@ const PendientesLocalPage = () => {
           placeholder="Buscar en la tabla..."
           style={{ padding: 6, minWidth: 240, borderRadius: 8, border: '1px solid #d0d5dd' }}
         />
+        <select
+          value={searchMode}
+          onChange={(e) => setSearchMode(e.target.value)}
+          style={{ padding: 6, borderRadius: 8, border: '1px solid #d0d5dd' }}
+        >
+          <option value="contains">Contiene</option>
+          <option value="exact">Coincidencia exacta</option>
+        </select>
         <button
           type="button"
           onClick={() => setShowColumnList(prev => !prev)}
           style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #d0d5dd', background: showColumnList ? '#e0e7ff' : '#f3f4f6', cursor: 'pointer', fontWeight: 600 }}
         >
           {showColumnList ? 'Ocultar columnas' : 'Seleccionar columnas'}
+        </button>
+        <button
+          type="button"
+          onClick={handlePrint}
+          style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #d0d5dd', background: '#fef3c7', cursor: 'pointer', fontWeight: 600 }}
+        >
+          Imprimir
         </button>
         <span style={{ alignSelf: 'center', fontWeight: 600, color: '#1f2937' }}>
           Total: {filteredData.length}
@@ -329,6 +476,13 @@ const PendientesLocalPage = () => {
           ref={gridRef}
           columnDefs={filteredColumnDefs}
           rowData={filteredData}
+          getRowId={(params) => {
+            const data = params?.data || {};
+            if (data.id != null) return String(data.id);
+            const pedido = data.PEDIDO != null ? String(data.PEDIDO) : '';
+            const item = data.ITEM != null ? String(data.ITEM) : '';
+            return `${pedido}|||${item}`;
+          }}
           domLayout="normal"
           rowSelection="none"
           suppressMovableColumns={true}
@@ -343,6 +497,8 @@ const PendientesLocalPage = () => {
           }}
           headerHeight={32}
           rowHeight={28}
+          enterMovesDown={false}
+          enterMovesDownAfterEdit={false}
           singleClickEdit={puedeEditar}
           stopEditingWhenCellsLoseFocus={true}
           onCellValueChanged={handleCellEdit}
