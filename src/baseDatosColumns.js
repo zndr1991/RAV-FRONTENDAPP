@@ -80,6 +80,45 @@ export function parseFechaPedido(fechaStr) {
   return new Date(Number(anio), Number(mes) - 1, Number(dia), h, m, s);
 }
 
+export const promesaRowClassRules = {
+  'promesa-roja': (params) => {
+    const promesa = parseFechaPedido(params?.data?.PROMESA_DE_ENTREGA);
+    if (!(promesa instanceof Date) || Number.isNaN(promesa.getTime())) return false;
+    const today = new Date();
+    return promesa < startOfToday(today);
+  },
+  'promesa-naranja': (params) => {
+    const promesa = parseFechaPedido(params?.data?.PROMESA_DE_ENTREGA);
+    if (!(promesa instanceof Date) || Number.isNaN(promesa.getTime())) return false;
+    const today = new Date();
+    return promesa >= startOfToday(today) && promesa <= endOfToday(today);
+  },
+  'promesa-verde': (params) => {
+    const promesa = parseFechaPedido(params?.data?.PROMESA_DE_ENTREGA);
+    if (!(promesa instanceof Date) || Number.isNaN(promesa.getTime())) return false;
+    const today = new Date();
+    return promesa > endOfToday(today);
+  }
+};
+
+function startOfToday(date) {
+  const copy = new Date(date);
+  copy.setHours(0, 0, 0, 0);
+  return copy;
+}
+
+function endOfToday(date) {
+  const copy = new Date(date);
+  copy.setHours(23, 59, 59, 999);
+  return copy;
+}
+
+const statusTooltipValueGetter = (field) => (params) => {
+  const data = params?.data || {};
+  const value = data[field];
+  return value == null ? '' : String(value);
+};
+
 export const baseColumnDefs = [
   { headerName: '', field: 'checked', checkboxSelection: true, headerCheckboxSelection: true, width: 30, pinned: 'left' },
   { headerName: 'ASEGURADORA', field: 'ASEGURADORA', width: 180 },
@@ -125,7 +164,22 @@ export const baseColumnDefs = [
   { headerName: 'COMPAQ', field: 'COMPAQ', width: 120 },
   { headerName: 'OC', field: 'OC', width: 100 },
   { headerName: 'NUEVO ESTATUS', field: 'NUEVO_ESTATUS', width: 150 },
-  { headerName: 'COLUMNA4', field: 'COLUMNA4', width: 120 },
-  { headerName: 'COLUMNA5', field: 'COLUMNA5', width: 120 },
-  { headerName: 'ESTATUS2', field: 'ESTATUS2', width: 120 }
+  {
+    headerName: 'ESTATUS LOCAL',
+    field: 'ESTATUS_LOCAL',
+    width: 150,
+    tooltipValueGetter: statusTooltipValueGetter('ESTATUS_LOCAL')
+  },
+  {
+    headerName: 'ESTATUS FORANEO',
+    field: 'ESTATUS_FORANEO',
+    width: 150,
+    tooltipValueGetter: statusTooltipValueGetter('ESTATUS_FORANEO')
+  },
+  {
+    headerName: 'ESTATUS2',
+    field: 'ESTATUS2',
+    width: 120,
+    tooltipValueGetter: statusTooltipValueGetter('ESTATUS2')
+  }
 ];

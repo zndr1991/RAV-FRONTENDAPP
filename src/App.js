@@ -6,14 +6,18 @@ import BaseDatosPage from './BaseDatosPage';
 import CodificarPage from './CodificarPage';
 import CrearUsuarioPage from './CrearUsuarioPage';
 import CapturaPage from './CapturaPage';
+import PendientesForaneoPage from './PendientesForaneoPage';
+import PendientesLocalPage from './PendientesLocalPage';
 import './App.css';
 
 function Menu({ usuario, onCerrarSesion }) {
   const rol = (usuario.role || '').toLowerCase();
   const esSupervisor = rol === 'supervisor';
   const esCaptura = rol === 'captura';
+  const esSeguimientos = rol === 'seguimientos';
   const esCodificar = rol === 'codificar';
-  const navLinkClass = ({ isActive }) => `app-nav__link${isActive ? ' app-nav__link--active' : ''}`;
+  const navLinkClass = (extra = '') => ({ isActive }) =>
+    `app-nav__link${isActive ? ' app-nav__link--active' : ''}${extra ? ` ${extra}` : ''}`;
   return (
     <header className="app-header">
       <div className="app-header__top">
@@ -29,25 +33,35 @@ function Menu({ usuario, onCerrarSesion }) {
         </button>
       </div>
       <nav className="app-nav">
+        <NavLink to="/basedatos" className={navLinkClass('app-nav__link--database')}>
+          Base de datos
+        </NavLink>
         {(esSupervisor || esCodificar) && (
-          <NavLink to="/codificar" className={navLinkClass}>
+          <NavLink to="/codificar" className={navLinkClass()}>
             Codificar
           </NavLink>
         )}
-        <NavLink to="/basedatos" className={navLinkClass}>
-          Base de datos
-        </NavLink>
+        {(esSupervisor || esSeguimientos) && (
+          <NavLink to="/pendientes-foraneo" className={navLinkClass()}>
+            Pendientes Foráneo
+          </NavLink>
+        )}
+        {(esSupervisor || esSeguimientos) && (
+          <NavLink to="/pendientes-local" className={navLinkClass()}>
+            Pendientes Local
+          </NavLink>
+        )}
         {(esSupervisor || esCaptura) && (
-          <NavLink to="/captura" className={navLinkClass}>
+          <NavLink to="/captura" className={navLinkClass()}>
             Captura
           </NavLink>
         )}
         {esSupervisor && (
           <>
-            <NavLink to="/usuarios" className={navLinkClass}>
+            <NavLink to="/usuarios" className={navLinkClass()}>
               Gestión de Usuarios
             </NavLink>
-            <NavLink to="/crear-usuario" className={navLinkClass}>
+            <NavLink to="/crear-usuario" className={navLinkClass()}>
               Crear Usuario
             </NavLink>
           </>
@@ -78,6 +92,7 @@ function App() {
   const rol = (usuario.role || '').toLowerCase();
   const esSupervisor = rol === 'supervisor';
   const esCaptura = rol === 'captura';
+  const esSeguimientos = rol === 'seguimientos';
 
   return (
     <BrowserRouter>
@@ -91,6 +106,12 @@ function App() {
                 <Route path="/basedatos" element={<BaseDatosPage />} />
                 {(esSupervisor || esCaptura) && (
                   <Route path="/captura" element={<CapturaPage />} />
+                )}
+                {(esSupervisor || esSeguimientos) && (
+                  <Route path="/pendientes-foraneo" element={<PendientesForaneoPage />} />
+                )}
+                {(esSupervisor || esSeguimientos) && (
+                  <Route path="/pendientes-local" element={<PendientesLocalPage />} />
                 )}
                 {esSupervisor && (
                   <Route path="/usuarios" element={<UsuariosPage />} />

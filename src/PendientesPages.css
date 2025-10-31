@@ -1,0 +1,14 @@
+.ag-row.promesa-roja .ag-cell {
+  background-color: rgba(239, 68, 68, 0.18);
+  color: #7f1d1d;
+}
+
+.ag-row.promesa-naranja .ag-cell {
+  background-color: rgba(249, 115, 22, 0.18);
+  color: #7c2d12;
+}
+
+.ag-row.promesa-verde .ag-cell {
+  background-color: rgba(16, 185, 129, 0.18);
+  color: #064e3b;
+}

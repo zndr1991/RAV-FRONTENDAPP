@@ -122,8 +122,8 @@ const columnDefs = [
   { headerName: "COMPAQ", field: "COMPAQ", width: 120 },
   { headerName: "OC", field: "OC", width: 100 },
   { headerName: "NUEVO ESTATUS", field: "NUEVO_ESTATUS", width: 150 },
-  { headerName: "COLUMNA4", field: "COLUMNA4", width: 120 },
-  { headerName: "COLUMNA5", field: "COLUMNA5", width: 120 },
+  { headerName: "ESTATUS LOCAL", field: "ESTATUS_LOCAL", width: 150 },
+  { headerName: "ESTATUS FORANEO", field: "ESTATUS_FORANEO", width: 150 },
   { headerName: "ESTATUS2", field: "ESTATUS2", width: 120 },
 ];
 
@@ -1225,7 +1225,7 @@ const columnasBaseDatos = [
   "CIUDAD_TALLER", "ESTADO_TALLER", "NOMBRE_CONTACTO", "TELEFONO", "EMAIL", "ARMADORA", "MODELO",
   "ANIO", "RFC_PROVEEDOR", "RAZON_SOCIAL_PROVEEDOR", "NOMBRE_COMERCIAL_PROVEEDOR", "COLUMNA1",
   "ESTADO_PROVEEDOR", "ITEM", "ORIGEN", "PRECIO", "ESTATUS", "BACK_ORDER", "CODIGO", "COSTO",
-  "LOCALIDAD", "CHOFER", "COMPAQ", "OC", "NUEVO_ESTATUS", "COLUMNA4", "COLUMNA5", "ESTATUS2"
+  "LOCALIDAD", "CHOFER", "COMPAQ", "OC", "NUEVO_ESTATUS", "ESTATUS_LOCAL", "ESTATUS_FORANEO", "ESTATUS2"
 ];
 
 const completarFila = (row) => {
