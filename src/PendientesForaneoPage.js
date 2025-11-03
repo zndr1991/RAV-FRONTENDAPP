@@ -30,6 +30,31 @@ const ALLOWED_STATUS = new Set(
   ['Entregado', 'En Procesamiento', 'Facturado', 'Aguardando Confirmacion'].map(normalizeStatus)
 );
 const EDITABLE_FIELDS = new Set(['ESTATUS_LOCAL', 'ESTATUS_FORANEO', 'ESTATUS2']);
+const SELECTION_FIELD = '__select__';
+
+const applyTextFilter = (rows, text, mode) => {
+  if (!text) return rows;
+  const lower = text.toLowerCase();
+  return rows.filter(row => {
+    const values = Object.values(row);
+    if (mode === 'not_contains') {
+      return values.every(val => {
+        if (val == null) return true;
+        return !String(val).toLowerCase().includes(lower);
+      });
+    }
+    if (mode === 'exact') {
+      return values.some(val => {
+        if (val == null) return false;
+        return String(val).toLowerCase() === lower;
+      });
+    }
+    return values.some(val => {
+      if (val == null) return false;
+      return String(val).toLowerCase().includes(lower);
+    });
+  });
+};
 
 const PendientesForaneoPage = () => {
   const gridRef = useRef(null);
@@ -38,7 +63,10 @@ const PendientesForaneoPage = () => {
   const [nuevoEstatusData, setNuevoEstatusData] = useState([]);
   const [searchText, setSearchText] = useState('');
   const [searchMode, setSearchMode] = useState('contains');
+  const [secondarySearchText, setSecondarySearchText] = useState('');
+  const [secondarySearchMode, setSecondarySearchMode] = useState('contains');
   const [showColumnList, setShowColumnList] = useState(false);
+  const [selectedCount, setSelectedCount] = useState(0);
 
   const usuario = useMemo(() => {
     try {
@@ -51,8 +79,23 @@ const PendientesForaneoPage = () => {
   const role = (usuario.role || '').toString().toLowerCase();
   const puedeEditar = role === 'supervisor' || role === 'seguimientos';
 
-  const columnDefs = useMemo(
-    () => baseColumnDefs
+  const columnDefs = useMemo(() => {
+    const selectionColumn = {
+      headerName: '',
+      field: SELECTION_FIELD,
+      width: 36,
+      pinned: 'left',
+      lockPinned: true,
+      suppressMenu: true,
+      sortable: false,
+      filter: false,
+      resizable: false,
+      checkboxSelection: true,
+      headerCheckboxSelection: true,
+      cellClass: 'selection-checkbox-cell'
+    };
+
+    const dataColumns = baseColumnDefs
       .filter(col => col.field !== 'checked')
       .map(col => {
         if (!col.field) return { ...col };
@@ -62,21 +105,22 @@ const PendientesForaneoPage = () => {
           editable: isEditableField && puedeEditar,
           cellEditor: isEditableField && puedeEditar ? col.cellEditor || 'agTextCellEditor' : col.cellEditor,
         };
-      }),
-    [puedeEditar]
-  );
+      });
+
+    return [selectionColumn, ...dataColumns];
+  }, [puedeEditar]);
 
   const baseColumnFields = useMemo(
     () => columnDefs
       .map(col => col.field)
-      .filter(field => field),
+      .filter(field => field && field !== SELECTION_FIELD),
     [columnDefs]
   );
 
   const columnLabels = useMemo(() => {
     const labels = {};
     columnDefs.forEach(col => {
-      if (col.field) {
+      if (col.field && col.field !== SELECTION_FIELD) {
         labels[col.field] = col.headerName || col.field;
       }
     });
@@ -130,18 +174,9 @@ const PendientesForaneoPage = () => {
   ), [enrichedRows]);
 
   const filteredData = useMemo(() => {
-    if (!searchText) return permittedRows;
-    const lower = searchText.toLowerCase();
-    return permittedRows.filter(row =>
-      Object.values(row).some(val => {
-        if (val == null) return false;
-        const cell = String(val).toLowerCase();
-        return searchMode === 'exact'
-          ? cell === lower
-          : cell.includes(lower);
-      })
-    );
-  }, [permittedRows, searchMode, searchText]);
+    const primary = applyTextFilter(permittedRows, searchText, searchMode);
+    return applyTextFilter(primary, secondarySearchText, secondarySearchMode);
+  }, [permittedRows, searchMode, searchText, secondarySearchMode, secondarySearchText]);
 
   const cargarDatos = useCallback(() => {
     fetch(`${API_BASE_URL}/api/basedatos/obtener`)
@@ -265,6 +300,52 @@ const PendientesForaneoPage = () => {
       return { ...prev, [field]: !currentlyVisible };
     });
   }, [columnVisibilityLoaded]);
+
+  const handleSelectionChanged = useCallback(() => {
+    if (!gridRef.current) return;
+    const selectedRows = gridRef.current.api.getSelectedRows();
+    setSelectedCount(selectedRows.length);
+  }, []);
+
+  const handleCopySelectedRows = useCallback(() => {
+    if (!gridRef.current) return;
+    const api = gridRef.current.api;
+    const selectedRows = api.getSelectedRows();
+    if (!selectedRows.length) {
+      alert('Selecciona al menos un renglón para copiar.');
+      return;
+    }
+
+    const visibleColumns = columnDefs.filter(col => (
+      col.field &&
+      col.field !== SELECTION_FIELD &&
+      (columnVisibilityLoaded ? columnVisibility[col.field] !== false : true)
+    ));
+
+    if (!visibleColumns.length) {
+      alert('No hay columnas visibles para copiar.');
+      return;
+    }
+
+    const headers = visibleColumns.map(col => col.headerName || col.field).join('\t');
+    const rowsText = selectedRows.map(row => (
+      visibleColumns
+        .map(col => {
+          const raw = row[col.field];
+          return raw == null ? '' : String(raw);
+        })
+        .join('\t')
+    ));
+    const clipboardText = [headers, ...rowsText].join('\n');
+
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(clipboardText).catch(() => {
+        api.copySelectedRowsToClipboard(true);
+      });
+    } else {
+      api.copySelectedRowsToClipboard(true);
+    }
+  }, [columnDefs, columnVisibility, columnVisibilityLoaded]);
 
   const handlePrint = useCallback(() => {
     if (typeof window === 'undefined') return;
@@ -435,6 +516,7 @@ const PendientesForaneoPage = () => {
         >
           <option value="contains">Contiene</option>
           <option value="exact">Coincidencia exacta</option>
+          <option value="not_contains">No contiene</option>
         </select>
         <button
           type="button"
@@ -450,9 +532,49 @@ const PendientesForaneoPage = () => {
         >
           Imprimir
         </button>
+        <button
+          type="button"
+          onClick={handleCopySelectedRows}
+          style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #d0d5dd', background: '#e0f2fe', cursor: 'pointer', fontWeight: 600 }}
+        >
+          Copiar selección
+        </button>
         <span style={{ alignSelf: 'center', fontWeight: 600, color: '#1f2937' }}>
           Total: {filteredData.length}
         </span>
+        <span style={{ alignSelf: 'center', fontWeight: 600, color: '#2563eb' }}>
+          Seleccionadas: {selectedCount}
+        </span>
+      </div>
+      <div style={{ marginBottom: 12, display: 'flex', gap: 12 }}>
+        <input
+          type="text"
+          value={secondarySearchText}
+          onChange={(e) => setSecondarySearchText(e.target.value)}
+          placeholder="Aplicar segundo filtro..."
+          style={{ padding: 6, minWidth: 240, borderRadius: 8, border: '1px solid #d0d5dd' }}
+        />
+        <select
+          value={secondarySearchMode}
+          onChange={(e) => setSecondarySearchMode(e.target.value)}
+          style={{ padding: 6, borderRadius: 8, border: '1px solid #d0d5dd' }}
+        >
+          <option value="contains">Contiene</option>
+          <option value="exact">Coincidencia exacta</option>
+          <option value="not_contains">No contiene</option>
+        </select>
+        {secondarySearchText && (
+          <button
+            type="button"
+            onClick={() => {
+              setSecondarySearchText('');
+              setSecondarySearchMode('contains');
+            }}
+            style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #d0d5dd', background: '#f3f4f6', cursor: 'pointer', fontWeight: 600 }}
+          >
+            Limpiar filtro secundario
+          </button>
+        )}
       </div>
       {showColumnList && (
         <div style={{ marginBottom: 12, padding: 12, borderRadius: 12, border: '1px solid #e5e7eb', background: '#f9fafb', display: 'flex', flexWrap: 'wrap', gap: 10, maxHeight: 220, overflowY: 'auto' }}>
@@ -484,10 +606,12 @@ const PendientesForaneoPage = () => {
             return `${pedido}|||${item}`;
           }}
           domLayout="normal"
-          rowSelection="none"
+          rowSelection="multiple"
           suppressMovableColumns={true}
           enableBrowserTooltips={true}
           enableCellTextSelection={true}
+          suppressRowClickSelection={true}
+          rowMultiSelectWithClick={true}
           defaultColDef={{
             resizable: true,
             sortable: true,
@@ -502,6 +626,7 @@ const PendientesForaneoPage = () => {
           singleClickEdit={puedeEditar}
           stopEditingWhenCellsLoseFocus={true}
           onCellValueChanged={handleCellEdit}
+          onSelectionChanged={handleSelectionChanged}
           rowClassRules={promesaRowClassRules}
         />
       </div>
