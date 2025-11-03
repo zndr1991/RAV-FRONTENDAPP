@@ -329,15 +329,27 @@ const PendientesLocalPage = () => {
 
     const headers = visibleColumns.map(col => col.headerName || col.field);
     const formattingRow = headers.map(() => '---------------');
-    const rowsHtml = selectedRows.map(row => (
-      `<tr>${visibleColumns.map(col => {
-        const raw = row[col.field];
-        const value = raw == null ? '' : String(raw);
-        return `<td>${value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</td>`;
-      }).join('')}</tr>`
-    )).join('');
 
-    const htmlTable = `<!DOCTYPE html><html><body><table border="1" cellspacing="0" cellpadding="4"><thead><tr>${headers.map(label => `<th>${label.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</th>`).join('')}</tr></thead><tbody>${rowsHtml}</tbody></table></body></html>`;
+    const escapeHtml = (raw) => {
+      const value = raw == null ? '' : String(raw);
+      return value
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    };
+
+    const headerHtml = headers
+      .map(label => `<th style="border:1px solid #9ca3af;padding:6px 8px;background:#1f2937;color:#ffffff;font-weight:600;">${escapeHtml(label)}</th>`)
+      .join('');
+
+    const rowsHtml = selectedRows.map(row => {
+      const cells = visibleColumns
+        .map(col => `<td style="border:1px solid #d1d5db;padding:6px 8px;">${escapeHtml(row[col.field])}</td>`)
+        .join('');
+      return `<tr>${cells}</tr>`;
+    }).join('');
+
+    const htmlTable = `<!DOCTYPE html><html><body><table border="0" cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;font-family:Arial, sans-serif;font-size:13px;"><thead><tr>${headerHtml}</tr></thead><tbody>${rowsHtml}</tbody></table></body></html>`;
 
     const plainRows = selectedRows.map(row => (
       visibleColumns
