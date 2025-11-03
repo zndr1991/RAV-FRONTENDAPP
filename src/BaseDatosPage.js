@@ -54,6 +54,7 @@ const ordenesColumnDefs = [
 ];
 
 const ALLOWED_LOCALIDADES = ['local', 'foraneo'];
+const CAPTURA_EDITABLE_FIELDS = new Set(['CODIGO', 'CHOFER']);
 
 const BaseDatosPage = () => {
   const usuario = JSON.parse(localStorage.getItem('usuario') || '{}');
@@ -76,7 +77,7 @@ const BaseDatosPage = () => {
   const [ordenesExcelData, setOrdenesExcelData] = useState([]);
   const [ordenesPuedeCargar, setOrdenesPuedeCargar] = useState(false);
   const gridRef = useRef();
-  const revertLocalidadRef = useRef(false);
+  const revertingRef = useRef(false);
   const nuevoEstatusGridRef = useRef();
   const ordenesGridRef = useRef();
   const ordenesFileInputRef = useRef();
@@ -102,9 +103,23 @@ const BaseDatosPage = () => {
           }
         };
       }
+      if (column.field === 'NUEVO_ESTATUS') {
+        return {
+          ...column,
+          editable: () => esSupervisor,
+          cellEditor: column.cellEditor || 'agTextCellEditor'
+        };
+      }
+      if (column.field && CAPTURA_EDITABLE_FIELDS.has(column.field)) {
+        return {
+          ...column,
+          editable: () => esSupervisor,
+          cellEditor: column.cellEditor || 'agTextCellEditor'
+        };
+      }
       return { ...column };
     }),
-    []
+    [esSupervisor]
   );
   const baseColumnFields = useMemo(
     () => columnDefs
@@ -166,9 +181,13 @@ const BaseDatosPage = () => {
       const key = buildPedidoItemKey(row.PEDIDO, row.ITEM);
       if (!key) return row;
       if (!nuevoEstatusLookup.has(key)) return row;
-      const nuevoValor = nuevoEstatusLookup.get(key);
-      if (row.NUEVO_ESTATUS === nuevoValor) return row;
-      return { ...row, NUEVO_ESTATUS: nuevoValor };
+      const overlayRaw = nuevoEstatusLookup.get(key);
+      const overlay = overlayRaw == null ? '' : String(overlayRaw);
+      if (overlay.trim() === '') return row;
+      const currentRaw = row.NUEVO_ESTATUS == null ? '' : String(row.NUEVO_ESTATUS);
+      if (currentRaw.trim() !== '') return row;
+      if (currentRaw === overlay) return row;
+      return { ...row, NUEVO_ESTATUS: overlay };
     });
   }, [baseDataRaw, nuevoEstatusLookup]);
 
@@ -378,73 +397,159 @@ const BaseDatosPage = () => {
   };
 
   const handlePrincipalCellEdit = useCallback((params) => {
-    if (revertLocalidadRef.current) return;
+    if (revertingRef.current) return;
 
     const field = params?.colDef?.field;
-    if (field !== 'LOCALIDAD') return;
+    if (!field) return;
+
+    const supervisorOnlyField = field === 'NUEVO_ESTATUS' || CAPTURA_EDITABLE_FIELDS.has(field);
+    if (supervisorOnlyField && !esSupervisor) {
+      revertingRef.current = true;
+      params.node.setDataValue(field, params.oldValue ?? '');
+      revertingRef.current = false;
+      return;
+    }
+
+    if (field !== 'LOCALIDAD' && field !== 'NUEVO_ESTATUS' && !CAPTURA_EDITABLE_FIELDS.has(field)) return;
 
     const rowId = params?.data?.id;
-    if (!rowId) {
-      revertLocalidadRef.current = true;
+    const numericId = Number(rowId);
+    if (!Number.isInteger(numericId)) {
+      revertingRef.current = true;
       params.node.setDataValue(field, params.oldValue ?? '');
-      revertLocalidadRef.current = false;
+      revertingRef.current = false;
       return;
     }
 
-    const oldValue = params.oldValue == null ? '' : String(params.oldValue).trim();
-    const newValueRaw = params.newValue == null ? '' : params.newValue;
-    let newValue = typeof newValueRaw === 'string' ? newValueRaw : String(newValueRaw);
-    newValue = newValue.trim();
+    const normalizeValue = (raw) => {
+      if (raw == null) return '';
+      return typeof raw === 'string' ? raw : String(raw);
+    };
 
-    if (!newValue) {
-      revertLocalidadRef.current = true;
-      params.node.setDataValue(field, oldValue);
-      revertLocalidadRef.current = false;
-      return;
-    }
+    const originalValue = normalizeValue(params.oldValue);
+    const enteredValue = normalizeValue(params.newValue);
 
-    const matchingOption = ALLOWED_LOCALIDADES.find(option => option.toLowerCase() === newValue.toLowerCase());
-    if (!matchingOption) {
-      alert('Ingresa "local" o "foraneo".');
-      revertLocalidadRef.current = true;
-      params.node.setDataValue(field, oldValue);
-      revertLocalidadRef.current = false;
-      return;
-    }
-
-    const finalValue = matchingOption;
-
-    if (oldValue.toLowerCase() === finalValue.toLowerCase()) {
-      if (params.value !== finalValue) {
-        revertLocalidadRef.current = true;
-        params.node.setDataValue(field, finalValue);
-        revertLocalidadRef.current = false;
+    if (field === 'LOCALIDAD') {
+      const trimmed = enteredValue.trim();
+      if (!trimmed) {
+        revertingRef.current = true;
+        params.node.setDataValue(field, originalValue);
+        revertingRef.current = false;
+        return;
       }
+
+      const matchingOption = ALLOWED_LOCALIDADES.find(option => option.toLowerCase() === trimmed.toLowerCase());
+      if (!matchingOption) {
+        alert('Ingresa "local" o "foraneo".');
+        revertingRef.current = true;
+        params.node.setDataValue(field, originalValue);
+        revertingRef.current = false;
+        return;
+      }
+
+      if (originalValue.trim().toLowerCase() === matchingOption.toLowerCase()) {
+        if (params.value !== matchingOption) {
+          revertingRef.current = true;
+          params.node.setDataValue(field, matchingOption);
+          revertingRef.current = false;
+        }
+        return;
+      }
+
+      fetch(`${API_BASE_URL}/api/basedatos/actualizar-estatus`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: numericId, field, value: matchingOption })
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (!data?.ok) {
+            throw new Error(data?.mensaje || 'No se pudo actualizar la localidad.');
+          }
+          revertingRef.current = true;
+          params.node.setDataValue(field, matchingOption);
+          revertingRef.current = false;
+        })
+        .catch(err => {
+          console.error('No se pudo actualizar la localidad:', err);
+          alert('No se pudo guardar la localidad.');
+          revertingRef.current = true;
+          params.node.setDataValue(field, originalValue);
+          revertingRef.current = false;
+        });
       return;
     }
 
-    fetch(`${API_BASE_URL}/api/basedatos/actualizar-estatus`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: rowId, field, value: finalValue })
-    })
-      .then(res => res.json())
-      .then(data => {
-        if (!data?.ok) {
-          throw new Error(data?.mensaje || 'No se pudo actualizar la localidad.');
+    if (field === 'NUEVO_ESTATUS') {
+      const finalValue = enteredValue.trim();
+      if (originalValue === finalValue) {
+        if (params.value !== finalValue) {
+          revertingRef.current = true;
+          params.node.setDataValue(field, finalValue);
+          revertingRef.current = false;
         }
-        revertLocalidadRef.current = true;
-        params.node.setDataValue(field, finalValue);
-        revertLocalidadRef.current = false;
+        return;
+      }
+
+      fetch(`${API_BASE_URL}/api/basedatos/actualizar-estatus`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: numericId, field, value: finalValue })
       })
-      .catch(err => {
-        console.error('No se pudo actualizar la localidad:', err);
-        alert('No se pudo guardar la localidad.');
-        revertLocalidadRef.current = true;
-        params.node.setDataValue(field, oldValue);
-        revertLocalidadRef.current = false;
-      });
-  }, []);
+        .then(res => res.json())
+        .then(data => {
+          if (!data?.ok) {
+            throw new Error(data?.mensaje || 'No se pudo actualizar el valor.');
+          }
+          revertingRef.current = true;
+          params.node.setDataValue(field, finalValue);
+          revertingRef.current = false;
+        })
+        .catch(err => {
+          console.error('No se pudo actualizar el valor:', err);
+          alert('No se pudo guardar el cambio.');
+          revertingRef.current = true;
+          params.node.setDataValue(field, originalValue);
+          revertingRef.current = false;
+        });
+      return;
+    }
+
+    if (CAPTURA_EDITABLE_FIELDS.has(field)) {
+      const finalValue = enteredValue.trim();
+      if (originalValue === finalValue) {
+        if (params.value !== finalValue) {
+          revertingRef.current = true;
+          params.node.setDataValue(field, finalValue);
+          revertingRef.current = false;
+        }
+        return;
+      }
+
+      fetch(`${API_BASE_URL}/api/basedatos/captura/actualizar-celda`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: numericId, field, value: finalValue })
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (!data?.ok) {
+            throw new Error(data?.mensaje || 'No se pudo actualizar el valor.');
+          }
+          revertingRef.current = true;
+          params.node.setDataValue(field, finalValue);
+          revertingRef.current = false;
+        })
+        .catch(err => {
+          console.error('No se pudo actualizar el valor:', err);
+          alert('No se pudo guardar el cambio.');
+          revertingRef.current = true;
+          params.node.setDataValue(field, originalValue);
+          revertingRef.current = false;
+        });
+      return;
+    }
+  }, [esSupervisor]);
 
   const handleAutoAssignLocalidades = useCallback(async () => {
     if (isAssigningLocalidades) return;

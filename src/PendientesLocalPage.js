@@ -31,7 +31,12 @@ const ALLOWED_STATUS = new Set(
 );
 const ROLE_RESTRICTED_FIELDS = new Set(['ESTATUS_LOCAL', 'ESTATUS_FORANEO', 'ESTATUS2']);
 const UNRESTRICTED_EDITABLE_FIELDS = new Set(['LOCALIDAD']);
-const EDITABLE_FIELDS = new Set([...ROLE_RESTRICTED_FIELDS, ...UNRESTRICTED_EDITABLE_FIELDS]);
+const CAPTURA_EDITABLE_FIELDS = new Set(['CHOFER']);
+const EDITABLE_FIELDS = new Set([
+  ...ROLE_RESTRICTED_FIELDS,
+  ...UNRESTRICTED_EDITABLE_FIELDS,
+  ...CAPTURA_EDITABLE_FIELDS
+]);
 const SELECTION_FIELD = '__select__';
 
 const applyTextFilter = (rows, text, mode) => {
@@ -103,9 +108,13 @@ const PendientesLocalPage = () => {
         if (!col.field) return { ...col };
         const fieldName = col.field;
         const isEditableField = EDITABLE_FIELDS.has(fieldName);
+        const fieldIsRoleRestricted = ROLE_RESTRICTED_FIELDS.has(fieldName);
+        const fieldIsUnrestricted = UNRESTRICTED_EDITABLE_FIELDS.has(fieldName);
+        const fieldIsCapturaEditable = CAPTURA_EDITABLE_FIELDS.has(fieldName);
         const canEditField = (
-          UNRESTRICTED_EDITABLE_FIELDS.has(fieldName) ||
-          (ROLE_RESTRICTED_FIELDS.has(fieldName) && puedeEditar)
+          (fieldIsRoleRestricted && puedeEditar) ||
+          fieldIsUnrestricted ||
+          fieldIsCapturaEditable
         );
         return {
           ...col,
@@ -165,9 +174,13 @@ const PendientesLocalPage = () => {
       if (!row) return row;
       const key = buildPedidoItemKey(row.PEDIDO, row.ITEM);
       if (!key || !nuevoEstatusLookup.has(key)) return row;
-      const nuevoValor = nuevoEstatusLookup.get(key);
-      if (row.NUEVO_ESTATUS === nuevoValor) return row;
-      return { ...row, NUEVO_ESTATUS: nuevoValor };
+      const overlayRaw = nuevoEstatusLookup.get(key);
+      const overlay = overlayRaw == null ? '' : String(overlayRaw);
+      if (overlay.trim() === '') return row;
+      const currentRaw = row.NUEVO_ESTATUS == null ? '' : String(row.NUEVO_ESTATUS);
+      if (currentRaw.trim() !== '') return row;
+      if (currentRaw === overlay) return row;
+      return { ...row, NUEVO_ESTATUS: overlay };
     });
   }, [baseDataRaw, nuevoEstatusLookup]);
 
@@ -216,9 +229,13 @@ const PendientesLocalPage = () => {
   }, []);
 
   const aplicarActualizacionSocket = useCallback((payload) => {
-    if (!payload || payload.type !== 'estatus_update') return false;
-    const { id, field, value } = payload;
-    if (!id || !field || !EDITABLE_FIELDS.has(field)) return false;
+    if (!payload) return false;
+    const { type, id, field, value } = payload;
+    if (!id || !field) return false;
+
+    const isEstatusPayload = type === 'estatus_update' && EDITABLE_FIELDS.has(field);
+    const isCapturaPayload = type === 'captura_cell_update' && CAPTURA_EDITABLE_FIELDS.has(field);
+    if (!isEstatusPayload && !isCapturaPayload) return false;
 
     let encontrado = false;
     let cambioRealizado = false;
@@ -508,21 +525,26 @@ const PendientesLocalPage = () => {
     if (revertingRef.current) return;
 
     const field = params?.colDef?.field;
-    if (!field || !EDITABLE_FIELDS.has(field)) return;
+    if (!field || (!EDITABLE_FIELDS.has(field) && !CAPTURA_EDITABLE_FIELDS.has(field))) return;
 
     const fieldIsRoleRestricted = ROLE_RESTRICTED_FIELDS.has(field);
-    if (fieldIsRoleRestricted && !puedeEditar) {
+    const fieldIsUnrestricted = UNRESTRICTED_EDITABLE_FIELDS.has(field);
+    const fieldIsCapturaEditable = CAPTURA_EDITABLE_FIELDS.has(field);
+
+    const puedeEditarCampo = fieldIsRoleRestricted
+      ? puedeEditar
+      : (fieldIsUnrestricted || fieldIsCapturaEditable);
+
+    if (!puedeEditarCampo) {
       revertingRef.current = true;
       params.node.setDataValue(field, params.oldValue ?? '');
       revertingRef.current = false;
       return;
     }
 
-    const puedeEditarCampo = fieldIsRoleRestricted ? puedeEditar : true;
-    if (!puedeEditarCampo) return;
-
     const rowId = params?.data?.id;
-    if (!rowId) {
+    const numericId = Number(rowId);
+    if (!Number.isInteger(numericId)) {
       revertingRef.current = true;
       params.node.setDataValue(field, params.oldValue ?? '');
       revertingRef.current = false;
@@ -535,19 +557,23 @@ const PendientesLocalPage = () => {
 
     if (oldValue === newValue) return;
 
-    fetch(`${API_BASE_URL}/api/basedatos/actualizar-estatus`, {
-      method: 'PUT',
+    const endpoint = fieldIsCapturaEditable
+      ? { url: `${API_BASE_URL}/api/basedatos/captura/actualizar-celda`, method: 'POST' }
+      : { url: `${API_BASE_URL}/api/basedatos/actualizar-estatus`, method: 'PUT' };
+
+    fetch(endpoint.url, {
+      method: endpoint.method,
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: rowId, field, value: newValue })
+      body: JSON.stringify({ id: numericId, field, value: newValue })
     })
       .then(res => res.json())
       .then(data => {
         if (!data?.ok) {
-          throw new Error(data?.mensaje || 'Error al actualizar estatus');
+          throw new Error(data?.mensaje || 'Error al guardar el cambio');
         }
       })
       .catch(err => {
-        console.error('No se pudo actualizar el estatus:', err);
+        console.error('No se pudo guardar el cambio:', err);
         alert('No se pudo guardar el cambio.');
         revertingRef.current = true;
         params.node.setDataValue(field, oldValue);

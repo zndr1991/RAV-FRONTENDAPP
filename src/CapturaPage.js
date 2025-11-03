@@ -410,11 +410,35 @@ function CapturaPage() {
 
   useEffect(() => {
     if (!puedeVer) return undefined;
-  const socket = socketIOClient(SOCKET_URL);
-    const refrescar = () => cargarDatos();
-    socket.on('excel_data_updated', refrescar);
+    const socket = socketIOClient(SOCKET_URL);
+    const handleExcelUpdate = (payload) => {
+      const targetId = payload?.id !== undefined ? Number(payload.id) : NaN;
+      if (
+        payload
+        && payload.type === 'captura_cell_update'
+        && Number.isInteger(targetId)
+        && typeof payload.field === 'string'
+      ) {
+        setRowData((prev) => (
+          Array.isArray(prev)
+            ? prev.map((row) => (row.id === targetId ? { ...row, [payload.field]: payload.value } : row))
+            : prev
+        ));
+
+        if (gridRef.current) {
+          const rowNode = gridRef.current.api.getRowNode(String(targetId));
+          if (rowNode) {
+            gridRef.current.api.setFocusedCell(rowNode.rowIndex, payload.field);
+          }
+        }
+        return;
+      }
+      cargarDatos();
+    };
+
+    socket.on('excel_data_updated', handleExcelUpdate);
     return () => {
-      socket.off('excel_data_updated', refrescar);
+      socket.off('excel_data_updated', handleExcelUpdate);
       socket.disconnect();
     };
   }, [cargarDatos, puedeVer]);
@@ -440,7 +464,9 @@ function CapturaPage() {
     ));
 
     if (api && node && Number.isInteger(node.rowIndex)) {
-      api.ensureIndexVisible(node.rowIndex, 'middle');
+      window.requestAnimationFrame(() => {
+        api.setFocusedCell(node.rowIndex, field);
+      });
     }
 
     if (!data?.id) return;
@@ -718,6 +744,9 @@ function CapturaPage() {
               domLayout="normal"
               suppressMovableColumns={true}
               suppressHorizontalScroll={false}
+              suppressScrollOnNewData={true}
+              enterMovesDownAfterEdit={false}
+              enterMovesDown={false}
               enableCellTextSelection={true}
               enableBrowserTooltips={true}
               headerHeight={32}
