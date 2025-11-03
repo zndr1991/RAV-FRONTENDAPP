@@ -29,7 +29,7 @@ const normalizeStatus = (value) => (
 const ALLOWED_STATUS = new Set(
   ['Entregado', 'En Procesamiento', 'Facturado', 'Aguardando Confirmacion'].map(normalizeStatus)
 );
-const EDITABLE_FIELDS = new Set(['ESTATUS_LOCAL', 'ESTATUS_FORANEO', 'ESTATUS2']);
+const EDITABLE_FIELDS = new Set(['ESTATUS_LOCAL', 'ESTATUS_FORANEO', 'ESTATUS2', 'LOCALIDAD']);
 const SELECTION_FIELD = '__select__';
 
 const applyTextFilter = (rows, text, mode) => {
