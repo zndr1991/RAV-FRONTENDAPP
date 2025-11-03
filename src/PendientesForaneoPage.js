@@ -187,8 +187,10 @@ const PendientesForaneoPage = () => {
   const permittedRows = useMemo(() => (
     Array.isArray(enrichedRows)
       ? enrichedRows.filter(row => {
-        const normalized = normalizeStatus(row.NUEVO_ESTATUS);
-        return normalized === '' || ALLOWED_STATUS.has(normalized);
+        const normalizedNuevo = normalizeStatus(row.NUEVO_ESTATUS);
+        const normalizedEstatus2 = normalizeStatus(row.ESTATUS2);
+        if (normalizedEstatus2 === 'cambio') return true;
+        return normalizedNuevo === '' || ALLOWED_STATUS.has(normalizedNuevo);
       })
       : []
   ), [enrichedRows]);
