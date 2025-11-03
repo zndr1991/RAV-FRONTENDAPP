@@ -29,7 +29,9 @@ const normalizeStatus = (value) => (
 const ALLOWED_STATUS = new Set(
   ['Entregado', 'En Procesamiento', 'Facturado', 'Aguardando Confirmacion'].map(normalizeStatus)
 );
-const EDITABLE_FIELDS = new Set(['ESTATUS_LOCAL', 'ESTATUS_FORANEO', 'ESTATUS2', 'LOCALIDAD']);
+const ROLE_RESTRICTED_FIELDS = new Set(['ESTATUS_LOCAL', 'ESTATUS_FORANEO', 'ESTATUS2']);
+const UNRESTRICTED_EDITABLE_FIELDS = new Set(['LOCALIDAD']);
+const EDITABLE_FIELDS = new Set([...ROLE_RESTRICTED_FIELDS, ...UNRESTRICTED_EDITABLE_FIELDS]);
 const SELECTION_FIELD = '__select__';
 
 const applyTextFilter = (rows, text, mode) => {
@@ -99,11 +101,16 @@ const PendientesLocalPage = () => {
       .filter(col => col.field !== 'checked')
       .map(col => {
         if (!col.field) return { ...col };
-        const isEditableField = EDITABLE_FIELDS.has(col.field);
+        const fieldName = col.field;
+        const isEditableField = EDITABLE_FIELDS.has(fieldName);
+        const canEditField = (
+          UNRESTRICTED_EDITABLE_FIELDS.has(fieldName) ||
+          (ROLE_RESTRICTED_FIELDS.has(fieldName) && puedeEditar)
+        );
         return {
           ...col,
-          editable: isEditableField && puedeEditar,
-          cellEditor: isEditableField && puedeEditar ? col.cellEditor || 'agTextCellEditor' : col.cellEditor,
+          editable: isEditableField && canEditField,
+          cellEditor: isEditableField && canEditField ? col.cellEditor || 'agTextCellEditor' : col.cellEditor,
         };
       });
 
@@ -499,10 +506,20 @@ const PendientesLocalPage = () => {
 
   const handleCellEdit = useCallback((params) => {
     if (revertingRef.current) return;
-    if (!puedeEditar) return;
 
     const field = params?.colDef?.field;
     if (!field || !EDITABLE_FIELDS.has(field)) return;
+
+    const fieldIsRoleRestricted = ROLE_RESTRICTED_FIELDS.has(field);
+    if (fieldIsRoleRestricted && !puedeEditar) {
+      revertingRef.current = true;
+      params.node.setDataValue(field, params.oldValue ?? '');
+      revertingRef.current = false;
+      return;
+    }
+
+    const puedeEditarCampo = fieldIsRoleRestricted ? puedeEditar : true;
+    if (!puedeEditarCampo) return;
 
     const rowId = params?.data?.id;
     if (!rowId) {
@@ -674,7 +691,7 @@ const PendientesLocalPage = () => {
           rowHeight={28}
           enterMovesDown={false}
           enterMovesDownAfterEdit={false}
-          singleClickEdit={puedeEditar}
+          singleClickEdit={true}
           stopEditingWhenCellsLoseFocus={true}
           onCellValueChanged={handleCellEdit}
           onSelectionChanged={handleSelectionChanged}

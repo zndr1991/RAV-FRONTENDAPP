@@ -53,6 +53,8 @@ const ordenesColumnDefs = [
   { headerName: 'ORDEN PROVEEDOR', field: 'ORDEN_PROVEEDOR', flex: 1.2, minWidth: 200 }
 ];
 
+const ALLOWED_LOCALIDADES = ['local', 'foraneo'];
+
 const BaseDatosPage = () => {
   const usuario = JSON.parse(localStorage.getItem('usuario') || '{}');
   const role = (usuario.role || '').toString().toLowerCase();
@@ -74,6 +76,7 @@ const BaseDatosPage = () => {
   const [ordenesExcelData, setOrdenesExcelData] = useState([]);
   const [ordenesPuedeCargar, setOrdenesPuedeCargar] = useState(false);
   const gridRef = useRef();
+  const revertLocalidadRef = useRef(false);
   const nuevoEstatusGridRef = useRef();
   const ordenesGridRef = useRef();
   const ordenesFileInputRef = useRef();
@@ -83,7 +86,23 @@ const BaseDatosPage = () => {
   const [showColumnListPrincipal, setShowColumnListPrincipal] = useState(false);
   const [showColumnListNuevo, setShowColumnListNuevo] = useState(false);
   const columnDefs = useMemo(
-    () => baseDatosColumnDefs.map(column => ({ ...column })),
+    () => baseDatosColumnDefs.map(column => {
+      if (column.field === 'LOCALIDAD') {
+        return {
+          ...column,
+          editable: (params) => {
+            const current = params?.data?.LOCALIDAD;
+            if (current == null) return true;
+            return String(current).trim() === '';
+          },
+          cellEditor: 'agSelectCellEditor',
+          cellEditorParams: {
+            values: ALLOWED_LOCALIDADES
+          }
+        };
+      }
+      return { ...column };
+    }),
     []
   );
   const baseColumnFields = useMemo(
@@ -356,6 +375,75 @@ const BaseDatosPage = () => {
       setOrdenesSelectedCount(selectedRows.length);
     }
   };
+
+  const handlePrincipalCellEdit = useCallback((params) => {
+    if (revertLocalidadRef.current) return;
+
+    const field = params?.colDef?.field;
+    if (field !== 'LOCALIDAD') return;
+
+    const rowId = params?.data?.id;
+    if (!rowId) {
+      revertLocalidadRef.current = true;
+      params.node.setDataValue(field, params.oldValue ?? '');
+      revertLocalidadRef.current = false;
+      return;
+    }
+
+    const oldValue = params.oldValue == null ? '' : String(params.oldValue).trim();
+    const newValueRaw = params.newValue == null ? '' : params.newValue;
+    let newValue = typeof newValueRaw === 'string' ? newValueRaw : String(newValueRaw);
+    newValue = newValue.trim();
+
+    if (!newValue) {
+      revertLocalidadRef.current = true;
+      params.node.setDataValue(field, oldValue);
+      revertLocalidadRef.current = false;
+      return;
+    }
+
+    const matchingOption = ALLOWED_LOCALIDADES.find(option => option.toLowerCase() === newValue.toLowerCase());
+    if (!matchingOption) {
+      alert('Ingresa "local" o "foraneo".');
+      revertLocalidadRef.current = true;
+      params.node.setDataValue(field, oldValue);
+      revertLocalidadRef.current = false;
+      return;
+    }
+
+    const finalValue = matchingOption;
+
+    if (oldValue.toLowerCase() === finalValue.toLowerCase()) {
+      if (params.value !== finalValue) {
+        revertLocalidadRef.current = true;
+        params.node.setDataValue(field, finalValue);
+        revertLocalidadRef.current = false;
+      }
+      return;
+    }
+
+    fetch(`${API_BASE_URL}/api/basedatos/actualizar-estatus`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: rowId, field, value: finalValue })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (!data?.ok) {
+          throw new Error(data?.mensaje || 'No se pudo actualizar la localidad.');
+        }
+        revertLocalidadRef.current = true;
+        params.node.setDataValue(field, finalValue);
+        revertLocalidadRef.current = false;
+      })
+      .catch(err => {
+        console.error('No se pudo actualizar la localidad:', err);
+        alert('No se pudo guardar la localidad.');
+        revertLocalidadRef.current = true;
+        params.node.setDataValue(field, oldValue);
+        revertLocalidadRef.current = false;
+      });
+  }, []);
 
   const handleDeleteSelected = async () => {
     if (!esSupervisor) return;
@@ -677,6 +765,9 @@ const BaseDatosPage = () => {
               headerHeight={32}
               rowHeight={28}
               onSelectionChanged={onSelectionChanged}
+              onCellValueChanged={handlePrincipalCellEdit}
+              singleClickEdit={true}
+              stopEditingWhenCellsLoseFocus={true}
             />
           </div>
         </div>
