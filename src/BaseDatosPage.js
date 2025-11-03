@@ -54,6 +54,7 @@ const ordenesColumnDefs = [
 ];
 
 const ALLOWED_LOCALIDADES = ['local', 'foraneo'];
+const ESTATUS_EDITABLE_FIELDS = new Set(['NUEVO_ESTATUS', 'ESTATUS2']);
 const CAPTURA_EDITABLE_FIELDS = new Set(['CODIGO', 'CHOFER']);
 
 const BaseDatosPage = () => {
@@ -92,21 +93,17 @@ const BaseDatosPage = () => {
       if (column.field === 'LOCALIDAD') {
         return {
           ...column,
-          editable: (params) => {
-            const current = params?.data?.LOCALIDAD;
-            if (current == null) return true;
-            return String(current).trim() === '';
-          },
+          editable: true,
           cellEditor: 'agSelectCellEditor',
           cellEditorParams: {
             values: ALLOWED_LOCALIDADES
           }
         };
       }
-      if (column.field === 'NUEVO_ESTATUS') {
+      if (column.field && ESTATUS_EDITABLE_FIELDS.has(column.field)) {
         return {
           ...column,
-          editable: () => esSupervisor,
+          editable: () => puedeGestionarNuevoEstatus,
           cellEditor: column.cellEditor || 'agTextCellEditor'
         };
       }
@@ -119,7 +116,7 @@ const BaseDatosPage = () => {
       }
       return { ...column };
     }),
-    [esSupervisor]
+    [esSupervisor, puedeGestionarNuevoEstatus]
   );
   const baseColumnFields = useMemo(
     () => columnDefs
@@ -402,15 +399,17 @@ const BaseDatosPage = () => {
     const field = params?.colDef?.field;
     if (!field) return;
 
-    const supervisorOnlyField = field === 'NUEVO_ESTATUS' || CAPTURA_EDITABLE_FIELDS.has(field);
-    if (supervisorOnlyField && !esSupervisor) {
+    const esCampoEstatus = ESTATUS_EDITABLE_FIELDS.has(field);
+    const requiereSupervisor = CAPTURA_EDITABLE_FIELDS.has(field);
+
+    if ((esCampoEstatus && !puedeGestionarNuevoEstatus) || (requiereSupervisor && !esSupervisor)) {
       revertingRef.current = true;
       params.node.setDataValue(field, params.oldValue ?? '');
       revertingRef.current = false;
       return;
     }
 
-    if (field !== 'LOCALIDAD' && field !== 'NUEVO_ESTATUS' && !CAPTURA_EDITABLE_FIELDS.has(field)) return;
+    if (field !== 'LOCALIDAD' && !esCampoEstatus && !CAPTURA_EDITABLE_FIELDS.has(field)) return;
 
     const rowId = params?.data?.id;
     const numericId = Number(rowId);
@@ -480,7 +479,7 @@ const BaseDatosPage = () => {
       return;
     }
 
-    if (field === 'NUEVO_ESTATUS') {
+    if (esCampoEstatus) {
       const finalValue = enteredValue.trim();
       if (originalValue === finalValue) {
         if (params.value !== finalValue) {
@@ -549,7 +548,7 @@ const BaseDatosPage = () => {
         });
       return;
     }
-  }, [esSupervisor]);
+  }, [esSupervisor, puedeGestionarNuevoEstatus]);
 
   const handleAutoAssignLocalidades = useCallback(async () => {
     if (isAssigningLocalidades) return;
