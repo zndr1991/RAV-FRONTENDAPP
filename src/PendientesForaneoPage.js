@@ -307,7 +307,7 @@ const PendientesForaneoPage = () => {
     setSelectedCount(selectedRows.length);
   }, []);
 
-  const handleCopySelectedRows = useCallback(() => {
+  const handleCopySelectedRows = useCallback(async () => {
     if (!gridRef.current) return;
     const api = gridRef.current.api;
     const selectedRows = api.getSelectedRows();
@@ -327,23 +327,62 @@ const PendientesForaneoPage = () => {
       return;
     }
 
-    const headers = visibleColumns.map(col => col.headerName || col.field).join('\t');
-    const rowsText = selectedRows.map(row => (
+    const headers = visibleColumns.map(col => col.headerName || col.field);
+    const formattingRow = headers.map(() => '---------------');
+    const rowsHtml = selectedRows.map(row => (
+      `<tr>${visibleColumns.map(col => {
+        const raw = row[col.field];
+        const value = raw == null ? '' : String(raw);
+        return `<td>${value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</td>`;
+      }).join('')}</tr>`
+    )).join('');
+
+    const htmlTable = `<!DOCTYPE html><html><body><table border="1" cellspacing="0" cellpadding="4"><thead><tr>${headers.map(label => `<th>${label.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</th>`).join('')}</tr></thead><tbody>${rowsHtml}</tbody></table></body></html>`;
+
+    const plainRows = selectedRows.map(row => (
       visibleColumns
         .map(col => {
           const raw = row[col.field];
           return raw == null ? '' : String(raw);
         })
-        .join('\t')
+        .join(' | ')
     ));
-    const clipboardText = [headers, ...rowsText].join('\n');
+    const plainText = [headers.join(' | '), formattingRow.join(' | '), ...plainRows].join('\n');
 
-    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(clipboardText).catch(() => {
-        api.copySelectedRowsToClipboard(true);
+    let clipboardSucceeded = false;
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.write) {
+      try {
+        const blobHtml = new Blob([htmlTable], { type: 'text/html' });
+        const blobText = new Blob([plainText], { type: 'text/plain' });
+        const clipboardItem = new ClipboardItem({
+          'text/html': blobHtml,
+          'text/plain': blobText
+        });
+        await navigator.clipboard.write([clipboardItem]);
+        clipboardSucceeded = true;
+      } catch (err) {
+        try {
+          await navigator.clipboard.writeText(plainText);
+          clipboardSucceeded = true;
+        } catch (errText) {
+          console.warn('No se pudo copiar formato enriquecido:', err, errText);
+        }
+      }
+    } else if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(plainText);
+        clipboardSucceeded = true;
+      } catch (err) {
+        console.warn('No se pudo copiar texto plano:', err);
+      }
+    }
+
+    if (!clipboardSucceeded) {
+      api.copySelectedRowsToClipboard({
+        processCellCallback: ({ value }) => (value == null ? '' : String(value)),
+        columnKeys: visibleColumns.map(col => col.field)
       });
-    } else {
-      api.copySelectedRowsToClipboard(true);
+      clipboardSucceeded = true;
     }
   }, [columnDefs, columnVisibility, columnVisibilityLoaded]);
 
