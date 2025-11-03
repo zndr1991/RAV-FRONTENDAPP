@@ -85,6 +85,7 @@ const BaseDatosPage = () => {
   const [nuevoEstatusPuedeCargar, setNuevoEstatusPuedeCargar] = useState(false);
   const [showColumnListPrincipal, setShowColumnListPrincipal] = useState(false);
   const [showColumnListNuevo, setShowColumnListNuevo] = useState(false);
+  const [isAssigningLocalidades, setIsAssigningLocalidades] = useState(false);
   const columnDefs = useMemo(
     () => baseDatosColumnDefs.map(column => {
       if (column.field === 'LOCALIDAD') {
@@ -445,6 +446,32 @@ const BaseDatosPage = () => {
       });
   }, []);
 
+  const handleAutoAssignLocalidades = useCallback(async () => {
+    if (isAssigningLocalidades) return;
+    setIsAssigningLocalidades(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/basedatos/asignar-localidades`, {
+        method: 'POST'
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload?.ok) {
+        throw new Error(payload?.mensaje || 'No se pudieron asignar las localidades');
+      }
+      const updated = Number(payload.updated) || 0;
+      if (updated > 0) {
+        alert(`Se actualizaron ${updated} registros.`);
+      } else {
+        alert('No se encontraron registros pendientes por asignar.');
+      }
+      cargarDatos();
+    } catch (err) {
+      console.error('Error al asignar localidades automáticamente:', err);
+      alert('Ocurrió un error al asignar las localidades automáticamente.');
+    } finally {
+      setIsAssigningLocalidades(false);
+    }
+  }, [cargarDatos, isAssigningLocalidades]);
+
   const handleDeleteSelected = async () => {
     if (!esSupervisor) return;
     if (!gridRef.current) return;
@@ -711,11 +738,18 @@ const BaseDatosPage = () => {
             <select
               value={searchType}
               onChange={e => setSearchType(e.target.value)}
-              style={{ padding: 6, borderRadius: 8, border: '1px solid #d0d5dd' }}
+                style={{ padding: 6, borderRadius: 8, border: '1px solid #d0d5dd' }}
             >
               <option value="contiene">Que contenga</option>
               <option value="exacta">Coincidencia exacta</option>
             </select>
+            <button
+              onClick={handleAutoAssignLocalidades}
+              disabled={isAssigningLocalidades}
+              style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #d1fae5', background: isAssigningLocalidades ? '#e5e7eb' : '#bbf7d0', cursor: isAssigningLocalidades ? 'not-allowed' : 'pointer', fontWeight: 600 }}
+            >
+              {isAssigningLocalidades ? 'Asignando...' : 'Completar localidades'}
+            </button>
             <button
               onClick={() => setShowColumnListPrincipal(prev => !prev)}
               style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #d0d5dd', background: showColumnListPrincipal ? '#e0e7ff' : '#f3f4f6', cursor: 'pointer', fontWeight: 600 }}
