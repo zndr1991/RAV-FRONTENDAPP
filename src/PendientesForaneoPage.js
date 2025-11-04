@@ -72,8 +72,15 @@ const PendientesForaneoPage = () => {
   const [searchMode, setSearchMode] = useState('contains');
   const [secondarySearchText, setSecondarySearchText] = useState('');
   const [secondarySearchMode, setSecondarySearchMode] = useState('contains');
+  const [tertiarySearchText, setTertiarySearchText] = useState('');
+  const [tertiarySearchMode, setTertiarySearchMode] = useState('contains');
   const [showColumnList, setShowColumnList] = useState(false);
   const [selectedCount, setSelectedCount] = useState(0);
+  const [cellInspector, setCellInspector] = useState(null);
+  const [canUndo, setCanUndo] = useState(false);
+  const undoStackRef = useRef([]);
+  const pendingUndoRef = useRef(null);
+  const suppressHistoryRef = useRef(false);
 
   const usuario = useMemo(() => {
     try {
@@ -85,6 +92,81 @@ const PendientesForaneoPage = () => {
   }, []);
   const role = (usuario.role || '').toString().toLowerCase();
   const puedeEditar = role === 'supervisor' || role === 'seguimientos';
+
+  const inspectorInputRef = useRef(null);
+  const inspectorSuppressCommitRef = useRef(false);
+  const inspectorFocusTrackerRef = useRef({ field: null, rowKey: null });
+  const inspectorStateRef = useRef(null);
+
+  const pushUndoEntry = useCallback((entry) => {
+    const stack = undoStackRef.current;
+    stack.push(entry);
+    while (stack.length > 5) {
+      stack.shift();
+    }
+    setCanUndo(stack.length > 0);
+  }, []);
+
+  const restoreUndoEntry = useCallback(() => {
+    const entry = pendingUndoRef.current;
+    if (!entry) {
+      suppressHistoryRef.current = false;
+      return;
+    }
+    const stack = undoStackRef.current;
+    stack.push(entry);
+    while (stack.length > 5) {
+      stack.shift();
+    }
+    pendingUndoRef.current = null;
+    suppressHistoryRef.current = false;
+    setCanUndo(stack.length > 0);
+  }, []);
+
+  const updateRowValueInState = useCallback((rowId, rowKey, field, rawValue) => {
+    if (!field) return;
+    const normalizedValue = rawValue == null ? '' : String(rawValue);
+    setBaseDataRaw(prev => {
+      if (!Array.isArray(prev) || !prev.length) return prev;
+
+      let targetIndex = -1;
+      if (rowId != null) {
+        const rowIdStr = String(rowId);
+        targetIndex = prev.findIndex(row => row && row.id != null && String(row.id) === rowIdStr);
+      }
+
+      if (targetIndex < 0 && rowKey) {
+        targetIndex = prev.findIndex(row => {
+          if (!row) return false;
+          return buildPedidoItemKey(row.PEDIDO, row.ITEM) === rowKey;
+        });
+      }
+
+      if (targetIndex < 0) return prev;
+
+      const currentRow = prev[targetIndex];
+      if (!currentRow) return prev;
+      const currentRaw = currentRow[field];
+      const currentValue = currentRaw == null ? '' : String(currentRaw);
+      if (currentValue === normalizedValue) return prev;
+
+      const next = [...prev];
+      next[targetIndex] = { ...currentRow, [field]: normalizedValue };
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    inspectorStateRef.current = cellInspector;
+  }, [cellInspector]);
+
+  const canEditField = useCallback((field) => {
+    if (!field) return false;
+    if (ROLE_RESTRICTED_FIELDS.has(field)) return puedeEditar;
+    if (UNRESTRICTED_EDITABLE_FIELDS.has(field)) return true;
+    if (CAPTURA_EDITABLE_FIELDS.has(field)) return true;
+    return false;
+  }, [puedeEditar]);
 
   const columnDefs = useMemo(() => {
     const selectionColumn = {
@@ -108,23 +190,16 @@ const PendientesForaneoPage = () => {
         if (!col.field) return { ...col };
         const fieldName = col.field;
         const isEditableField = EDITABLE_FIELDS.has(fieldName);
-        const fieldIsRoleRestricted = ROLE_RESTRICTED_FIELDS.has(fieldName);
-        const fieldIsUnrestricted = UNRESTRICTED_EDITABLE_FIELDS.has(fieldName);
-        const fieldIsCapturaEditable = CAPTURA_EDITABLE_FIELDS.has(fieldName);
-        const canEditField = (
-          (fieldIsRoleRestricted && puedeEditar) ||
-          fieldIsUnrestricted ||
-          fieldIsCapturaEditable
-        );
+        const canEditThisField = canEditField(fieldName);
         return {
           ...col,
-          editable: isEditableField && canEditField,
-          cellEditor: isEditableField && canEditField ? col.cellEditor || 'agTextCellEditor' : col.cellEditor,
+          editable: isEditableField && canEditThisField,
+          cellEditor: isEditableField && canEditThisField ? col.cellEditor || 'agTextCellEditor' : col.cellEditor,
         };
       });
 
     return [selectionColumn, ...dataColumns];
-  }, [puedeEditar]);
+  }, [canEditField]);
 
   const baseColumnFields = useMemo(
     () => columnDefs
@@ -197,8 +272,9 @@ const PendientesForaneoPage = () => {
 
   const filteredData = useMemo(() => {
     const primary = applyTextFilter(permittedRows, searchText, searchMode);
-    return applyTextFilter(primary, secondarySearchText, secondarySearchMode);
-  }, [permittedRows, searchMode, searchText, secondarySearchMode, secondarySearchText]);
+    const secondary = applyTextFilter(primary, secondarySearchText, secondarySearchMode);
+    return applyTextFilter(secondary, tertiarySearchText, tertiarySearchMode);
+  }, [permittedRows, searchMode, searchText, secondarySearchMode, secondarySearchText, tertiarySearchMode, tertiarySearchText]);
 
   const cargarDatos = useCallback(() => {
     fetch(`${API_BASE_URL}/api/basedatos/obtener`)
@@ -240,18 +316,20 @@ const PendientesForaneoPage = () => {
     if (!isEstatusPayload && !isCapturaPayload) return false;
 
     let encontrado = false;
-    let cambioRealizado = false;
     setBaseDataRaw(prev => {
       if (!Array.isArray(prev) || !prev.length) return prev;
-      const siguiente = prev.map(row => {
-        if (!row || row.id !== id) return row;
-        encontrado = true;
-        const nuevoValor = value == null ? '' : String(value);
-        if (row[field] === nuevoValor) return row;
-        cambioRealizado = true;
-        return { ...row, [field]: nuevoValor };
-      });
-      return cambioRealizado ? siguiente : prev;
+      const targetIndex = prev.findIndex(row => row && row.id != null && String(row.id) === String(id));
+      if (targetIndex < 0) return prev;
+      encontrado = true;
+      const currentRow = prev[targetIndex];
+      if (!currentRow) return prev;
+      const nuevoValor = value == null ? '' : String(value);
+      const currentRaw = currentRow[field];
+      const currentValor = currentRaw == null ? '' : String(currentRaw);
+      if (currentValor === nuevoValor) return prev;
+      const siguiente = [...prev];
+      siguiente[targetIndex] = { ...currentRow, [field]: nuevoValor };
+      return siguiente;
     });
     return encontrado;
   }, []);
@@ -523,11 +601,25 @@ const PendientesForaneoPage = () => {
     }
   }, [columnDefs, columnVisibility, columnVisibilityLoaded, filteredData]);
 
+  const updateInspectorForNode = useCallback((node, field, updater) => {
+    setCellInspector(prev => {
+      if (!prev || prev.rowNode !== node || prev.field !== field) return prev;
+      return updater(prev);
+    });
+  }, []);
+
   const handleCellEdit = useCallback((params) => {
     if (revertingRef.current) return;
 
+    const skipHistory = suppressHistoryRef.current === true;
+
     const field = params?.colDef?.field;
-    if (!field || (!EDITABLE_FIELDS.has(field) && !CAPTURA_EDITABLE_FIELDS.has(field))) return;
+    if (!field || (!EDITABLE_FIELDS.has(field) && !CAPTURA_EDITABLE_FIELDS.has(field))) {
+      if (skipHistory) restoreUndoEntry();
+      return;
+    }
+
+    updateInspectorForNode(params.node, field, prev => ({ ...prev, isCommitting: true }));
 
     const fieldIsRoleRestricted = ROLE_RESTRICTED_FIELDS.has(field);
     const fieldIsUnrestricted = UNRESTRICTED_EDITABLE_FIELDS.has(field);
@@ -541,15 +633,26 @@ const PendientesForaneoPage = () => {
       revertingRef.current = true;
       params.node.setDataValue(field, params.oldValue ?? '');
       revertingRef.current = false;
+      updateInspectorForNode(params.node, field, prev => {
+        const revertValue = params.oldValue == null ? '' : String(params.oldValue);
+        return { ...prev, value: revertValue, originalValue: revertValue, isDirty: false, isCommitting: false };
+      });
+      if (skipHistory) restoreUndoEntry();
       return;
     }
 
     const rowId = params?.data?.id;
+    const rowKey = buildPedidoItemKey(params?.data?.PEDIDO, params?.data?.ITEM);
     const numericId = Number(rowId);
     if (!Number.isInteger(numericId)) {
       revertingRef.current = true;
       params.node.setDataValue(field, params.oldValue ?? '');
       revertingRef.current = false;
+      updateInspectorForNode(params.node, field, prev => {
+        const revertValue = params.oldValue == null ? '' : String(params.oldValue);
+        return { ...prev, value: revertValue, originalValue: revertValue, isDirty: false, isCommitting: false };
+      });
+      if (skipHistory) restoreUndoEntry();
       return;
     }
 
@@ -557,7 +660,13 @@ const PendientesForaneoPage = () => {
     const newValueRaw = params.newValue == null ? '' : params.newValue;
     const newValue = typeof newValueRaw === 'string' ? newValueRaw : String(newValueRaw);
 
-    if (oldValue === newValue) return;
+    if (oldValue === newValue) {
+      updateInspectorForNode(params.node, field, prev => ({ ...prev, value: newValue, originalValue: newValue, isDirty: false, isCommitting: false }));
+      if (skipHistory) restoreUndoEntry();
+      return;
+    }
+
+    updateRowValueInState(numericId, rowKey, field, newValue);
 
     const endpoint = fieldIsCapturaEditable
       ? { url: `${API_BASE_URL}/api/basedatos/captura/actualizar-celda`, method: 'POST' }
@@ -573,6 +682,27 @@ const PendientesForaneoPage = () => {
         if (!data?.ok) {
           throw new Error(data?.mensaje || 'Error al guardar el cambio');
         }
+        updateInspectorForNode(params.node, field, prev => {
+          const appliedRaw = params.node?.data?.[field];
+          const appliedValue = appliedRaw == null ? '' : String(appliedRaw);
+          return { ...prev, value: appliedValue, originalValue: appliedValue, isDirty: false, isCommitting: false };
+        });
+        const appliedRaw = params.node?.data?.[field];
+        const appliedValue = appliedRaw == null ? '' : String(appliedRaw);
+        updateRowValueInState(numericId, rowKey, field, appliedValue);
+        if (!skipHistory) {
+          pushUndoEntry({
+            rowId: numericId,
+            rowNodeId: params.node?.id ?? null,
+            rowKey,
+            field,
+            previousValue: oldValue,
+            newValue: appliedValue
+          });
+        } else {
+          pendingUndoRef.current = null;
+          setCanUndo(undoStackRef.current.length > 0);
+        }
       })
       .catch(err => {
         console.error('No se pudo guardar el cambio:', err);
@@ -580,8 +710,21 @@ const PendientesForaneoPage = () => {
         revertingRef.current = true;
         params.node.setDataValue(field, oldValue);
         revertingRef.current = false;
+        updateRowValueInState(numericId, rowKey, field, oldValue);
+        updateInspectorForNode(params.node, field, prev => ({ ...prev, value: oldValue, originalValue: oldValue, isDirty: false, isCommitting: false }));
+        if (skipHistory) {
+          restoreUndoEntry();
+        }
+      })
+      .finally(() => {
+        updateInspectorForNode(params.node, field, prev => ({ ...prev, isCommitting: false }));
+        if (skipHistory) {
+          suppressHistoryRef.current = false;
+          pendingUndoRef.current = null;
+          setCanUndo(undoStackRef.current.length > 0);
+        }
       });
-  }, [puedeEditar]);
+  }, [puedeEditar, updateInspectorForNode, pushUndoEntry, restoreUndoEntry, updateRowValueInState]);
 
   const filteredColumnDefs = useMemo(() => {
     if (!columnVisibilityLoaded) return columnDefs;
@@ -591,12 +734,352 @@ const PendientesForaneoPage = () => {
     });
   }, [columnDefs, columnVisibility, columnVisibilityLoaded]);
 
+  const updateInspectorFromParams = useCallback((params) => {
+    const field = params?.colDef?.field;
+    if (!field || field === SELECTION_FIELD) {
+      setCellInspector(null);
+      return;
+    }
+    const node = params?.node;
+    if (!node) {
+      setCellInspector(null);
+      return;
+    }
+    const rowData = params?.data || node.data || {};
+    const rawValue = rowData[field];
+    const normalizedValue = rawValue == null ? '' : String(rawValue);
+    setCellInspector({
+      field,
+      header: columnLabels[field] || field,
+      rowNode: node,
+      rowId: rowData.id ?? null,
+      value: normalizedValue,
+      originalValue: normalizedValue,
+      editable: canEditField(field),
+      isDirty: false,
+      isCommitting: false
+    });
+  }, [canEditField, columnLabels]);
+
+  const handleCellClicked = useCallback((params) => {
+    updateInspectorFromParams(params);
+  }, [updateInspectorFromParams]);
+
+  const handleCellFocused = useCallback((params) => {
+    if (!params?.column) {
+      setCellInspector(null);
+      return;
+    }
+    const field = params.column.getColDef()?.field;
+    if (!field) {
+      setCellInspector(null);
+      return;
+    }
+    if (field === SELECTION_FIELD) return;
+    const rowIndex = params.rowIndex;
+    if (typeof rowIndex !== 'number' || rowIndex < 0) {
+      setCellInspector(null);
+      return;
+    }
+    const node = params.api?.getDisplayedRowAtIndex(rowIndex);
+    if (!node) {
+      setCellInspector(null);
+      return;
+    }
+    updateInspectorFromParams({
+      colDef: params.column.getColDef(),
+      node,
+      data: node.data,
+      value: node.data?.[field]
+    });
+  }, [updateInspectorFromParams]);
+
+  const handleInspectorChange = useCallback((event) => {
+    const nextValue = event?.target?.value ?? '';
+    setCellInspector(prev => {
+      if (!prev) return prev;
+      if (prev.value === nextValue) return prev;
+      return { ...prev, value: nextValue, isDirty: true };
+    });
+  }, []);
+
+  const commitInspector = useCallback(() => {
+    const current = inspectorStateRef.current;
+    if (!current || !current.rowNode || !current.field) return;
+    if (!current.editable) return;
+    const normalizedValue = current.value == null ? '' : String(current.value);
+    const previousRaw = current.rowNode.data?.[current.field];
+    const previousValue = previousRaw == null ? '' : String(previousRaw);
+    if (!current.isDirty && normalizedValue === current.originalValue) return;
+    if (normalizedValue === previousValue) {
+      setCellInspector(prev => {
+        if (!prev || prev.rowNode !== current.rowNode || prev.field !== current.field) return prev;
+        return { ...prev, originalValue: normalizedValue, isDirty: false, isCommitting: false };
+      });
+      return;
+    }
+    setCellInspector(prev => {
+      if (!prev || prev.rowNode !== current.rowNode || prev.field !== current.field) return prev;
+      return { ...prev, isCommitting: true };
+    });
+    current.rowNode.setDataValue(current.field, normalizedValue);
+  }, []);
+
+  const handleInspectorBlur = useCallback(() => {
+    if (inspectorSuppressCommitRef.current) {
+      inspectorSuppressCommitRef.current = false;
+      return;
+    }
+    commitInspector();
+  }, [commitInspector]);
+
+  const handleInspectorKeyDown = useCallback((event) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      inspectorSuppressCommitRef.current = true;
+      setTimeout(() => {
+        inspectorSuppressCommitRef.current = false;
+      }, 0);
+      setCellInspector(null);
+      inspectorFocusTrackerRef.current = { field: null, rowKey: null };
+      gridRef.current?.api?.clearFocusedCell();
+      return;
+    }
+    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+      commitInspector();
+    }
+  }, [commitInspector]);
+
+  const handleUndo = useCallback(() => {
+    const stack = undoStackRef.current;
+    if (!stack.length) return;
+
+    if (suppressHistoryRef.current || pendingUndoRef.current) return;
+
+    const entry = stack.pop();
+    setCanUndo(stack.length > 0);
+
+    if (!entry) return;
+
+    const api = gridRef.current?.api;
+    if (!api) {
+      stack.push(entry);
+      if (stack.length > 5) {
+        stack.shift();
+      }
+      setCanUndo(stack.length > 0);
+      return;
+    }
+
+    let targetNode = null;
+    if (entry.rowNodeId != null) {
+      targetNode = api.getRowNode(entry.rowNodeId);
+    }
+
+    if (!targetNode) {
+      api.forEachNode(node => {
+        if (targetNode) return;
+        const dataId = node.data?.id;
+        if (dataId != null && entry.rowId != null && String(dataId) === String(entry.rowId)) {
+          targetNode = node;
+          return;
+        }
+        if (entry.rowKey) {
+          const key = buildPedidoItemKey(node.data?.PEDIDO, node.data?.ITEM);
+          if (key && key === entry.rowKey) {
+            targetNode = node;
+          }
+        }
+      });
+    }
+
+    if (!targetNode) {
+      stack.push(entry);
+      if (stack.length > 5) {
+        stack.shift();
+      }
+      setCanUndo(stack.length > 0);
+      alert('No se encontró el renglón para deshacer el cambio.');
+      return;
+    }
+
+    pendingUndoRef.current = entry;
+    suppressHistoryRef.current = true;
+    targetNode.setDataValue(entry.field, entry.previousValue ?? '');
+    setCanUndo(stack.length > 0);
+  }, []);
+
+  const handleInspectorCancel = useCallback(() => {
+    inspectorSuppressCommitRef.current = true;
+    setTimeout(() => {
+      inspectorSuppressCommitRef.current = false;
+    }, 0);
+    setCellInspector(null);
+    inspectorFocusTrackerRef.current = { field: null, rowKey: null };
+    gridRef.current?.api?.clearFocusedCell();
+  }, []);
+
+  useEffect(() => {
+    if (!cellInspector || !cellInspector.editable) {
+      inspectorFocusTrackerRef.current = { field: null, rowKey: null };
+      return;
+    }
+    const field = cellInspector.field;
+    const rowNode = cellInspector.rowNode;
+    const rowKey = rowNode ? (rowNode.id ?? rowNode?.data?.id ?? null) : null;
+    const previous = inspectorFocusTrackerRef.current;
+    if (previous.field === field && previous.rowKey === rowKey) return;
+    inspectorFocusTrackerRef.current = { field, rowKey };
+  }, [cellInspector]);
+
+  useEffect(() => {
+    if (!cellInspector || cellInspector.isDirty || cellInspector.isCommitting) return;
+    if (!cellInspector.rowNode || !cellInspector.field) return;
+    const latestRaw = cellInspector.rowNode.data?.[cellInspector.field];
+    const latestValue = latestRaw == null ? '' : String(latestRaw);
+    if (cellInspector.value === latestValue && cellInspector.originalValue === latestValue) return;
+    setCellInspector(prev => {
+      if (!prev || !prev.rowNode || prev.rowNode !== cellInspector.rowNode || prev.field !== cellInspector.field) return prev;
+      return { ...prev, value: latestValue, originalValue: latestValue };
+    });
+  }, [cellInspector, baseDataRaw]);
+
   return (
     <div style={{ padding: '24px' }}>
       <h2 style={{ marginBottom: 16 }}>Pendientes Foráneo</h2>
       <p style={{ marginTop: 0, color: '#6b7280' }}>
         Registros cuya localidad corresponde al equipo foráneo.
       </p>
+      <section
+        style={{
+          background: '#f8fafc',
+          border: '1px solid #d1d5db',
+          borderRadius: 12,
+          padding: 16,
+          marginBottom: 12,
+          boxShadow: '0 4px 12px rgba(15, 23, 42, 0.06)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 12
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 15, color: '#111827' }}>
+              {cellInspector?.field ? cellInspector.header : 'Inspector de celda'}
+            </div>
+            {cellInspector?.field ? (
+              <>
+                <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>
+                  {cellInspector.rowId ? `Registro #${cellInspector.rowId}` : 'Sin identificador'}
+                </div>
+                <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+                  {cellInspector.editable ? 'Los cambios se guardan al salir del campo o con Ctrl+Enter.' : 'Solo lectura.'}
+                </div>
+              </>
+            ) : (
+              <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>
+                Selecciona una celda para ver su contenido.
+              </div>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={handleInspectorCancel}
+            disabled={!cellInspector}
+            style={{
+              padding: '6px 14px',
+              borderRadius: 8,
+              border: '1px solid #d0d5dd',
+              background: cellInspector ? '#f9fafb' : '#f3f4f6',
+              cursor: cellInspector ? 'pointer' : 'not-allowed',
+              fontWeight: 600,
+              color: '#1f2937',
+              opacity: cellInspector ? 1 : 0.6
+            }}
+          >
+            Limpiar selección
+          </button>
+        </div>
+        {cellInspector ? (
+          cellInspector.editable ? (
+            <textarea
+              ref={inspectorInputRef}
+              value={cellInspector.value}
+              onChange={handleInspectorChange}
+              onBlur={handleInspectorBlur}
+              onKeyDown={handleInspectorKeyDown}
+              rows={3}
+              placeholder="Escribe el valor..."
+              style={{
+                width: '100%',
+                padding: 10,
+                borderRadius: 10,
+                border: '1px solid #cbd5e1',
+                resize: 'vertical',
+                fontSize: 12.5,
+                minHeight: 72,
+                background: '#ffffff'
+              }}
+            />
+          ) : (
+            <div
+              style={{
+                minHeight: 72,
+                borderRadius: 10,
+                border: '1px solid #dbeafe',
+                background: '#ffffff',
+                padding: 12,
+                fontSize: 12.5,
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                color: '#111827'
+              }}
+            >
+              {cellInspector.value || '(vacío)'}
+            </div>
+          )
+        ) : (
+          <div
+            style={{
+              minHeight: 68,
+              borderRadius: 10,
+              border: '1px dashed #d1d5db',
+              background: '#ffffff',
+              padding: 12,
+              fontSize: 12.5,
+              color: '#6b7280'
+            }}
+          >
+            No hay una celda seleccionada.
+          </div>
+        )}
+        {cellInspector?.editable && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+            <button
+              type="button"
+              onMouseDown={() => { inspectorSuppressCommitRef.current = true; }}
+              onClick={() => {
+                inspectorSuppressCommitRef.current = false;
+                commitInspector();
+              }}
+              disabled={cellInspector.isCommitting}
+              style={{
+                padding: '6px 14px',
+                borderRadius: 8,
+                border: 'none',
+                background: cellInspector.isCommitting ? '#bfdbfe' : '#3b82f6',
+                color: '#fff',
+                fontWeight: 600,
+                cursor: cellInspector.isCommitting ? 'not-allowed' : 'pointer'
+              }}
+            >
+              Guardar cambio
+            </button>
+          </div>
+        )}
+      </section>
       <div style={{ marginBottom: 12, display: 'flex', gap: 12 }}>
         <input
           type="text"
@@ -635,6 +1118,26 @@ const PendientesForaneoPage = () => {
         >
           Copiar selección
         </button>
+        <button
+          type="button"
+          onClick={handleUndo}
+          disabled={!canUndo}
+          title="Deshacer el último cambio (máximo 5)"
+          style={{
+            padding: '6px 14px',
+            borderRadius: 8,
+            border: '1px solid #d0d5dd',
+            background: canUndo ? '#e0e7ff' : '#f3f4f6',
+            cursor: canUndo ? 'pointer' : 'not-allowed',
+            fontWeight: 600,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6
+          }}
+        >
+          <span style={{ fontSize: 16 }}>↶</span>
+          Deshacer
+        </button>
         <span style={{ alignSelf: 'center', fontWeight: 600, color: '#1f2937' }}>
           Total: {filteredData.length}
         </span>
@@ -669,6 +1172,36 @@ const PendientesForaneoPage = () => {
             style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #d0d5dd', background: '#f3f4f6', cursor: 'pointer', fontWeight: 600 }}
           >
             Limpiar filtro secundario
+          </button>
+        )}
+      </div>
+      <div style={{ marginBottom: 12, display: 'flex', gap: 12 }}>
+        <input
+          type="text"
+          value={tertiarySearchText}
+          onChange={(e) => setTertiarySearchText(e.target.value)}
+          placeholder="Aplicar tercer filtro..."
+          style={{ padding: 6, minWidth: 240, borderRadius: 8, border: '1px solid #d0d5dd' }}
+        />
+        <select
+          value={tertiarySearchMode}
+          onChange={(e) => setTertiarySearchMode(e.target.value)}
+          style={{ padding: 6, borderRadius: 8, border: '1px solid #d0d5dd' }}
+        >
+          <option value="contains">Contiene</option>
+          <option value="exact">Coincidencia exacta</option>
+          <option value="not_contains">No contiene</option>
+        </select>
+        {tertiarySearchText && (
+          <button
+            type="button"
+            onClick={() => {
+              setTertiarySearchText('');
+              setTertiarySearchMode('contains');
+            }}
+            style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #d0d5dd', background: '#f3f4f6', cursor: 'pointer', fontWeight: 600 }}
+          >
+            Limpiar tercer filtro
           </button>
         )}
       </div>
@@ -708,6 +1241,7 @@ const PendientesForaneoPage = () => {
           enableCellTextSelection={true}
           suppressRowClickSelection={true}
           rowMultiSelectWithClick={true}
+          deltaRowDataMode={true}
           defaultColDef={{
             resizable: true,
             sortable: true,
@@ -723,6 +1257,8 @@ const PendientesForaneoPage = () => {
           stopEditingWhenCellsLoseFocus={true}
           onCellValueChanged={handleCellEdit}
           onSelectionChanged={handleSelectionChanged}
+          onCellClicked={handleCellClicked}
+          onCellFocused={handleCellFocused}
           rowClassRules={promesaRowClassRules}
         />
       </div>
