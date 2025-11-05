@@ -312,6 +312,19 @@ const BaseDatosPage = () => {
   const [columnVisibility, setColumnVisibility] = useState({});
   const [columnVisibilityLoaded, setColumnVisibilityLoaded] = useState(false);
 
+  const ordenesLookup = useMemo(() => {
+    const map = new Map();
+    ordenesData.forEach(entry => {
+      if (!entry) return;
+      const pedidoKey = normalizeKeyPart(entry.PEDIDO);
+      if (!pedidoKey || map.has(pedidoKey)) return;
+      const rawOrden = entry.ORDEN_PROVEEDOR;
+      const normalizedOrden = rawOrden == null ? '' : String(rawOrden);
+      map.set(pedidoKey, normalizedOrden);
+    });
+    return map;
+  }, [ordenesData]);
+
   // Build a quick lookup so we can project ESTATUS into the main grid.
   const nuevoEstatusLookup = useMemo(() => {
     const map = new Map();
@@ -333,18 +346,34 @@ const BaseDatosPage = () => {
     if (!Array.isArray(baseDataRaw) || baseDataRaw.length === 0) return baseDataRaw;
     return baseDataRaw.map(row => {
       if (!row) return row;
+      let nextRow = row;
+
       const key = buildPedidoItemKey(row.PEDIDO, row.ITEM);
-      if (!key) return row;
-      if (!nuevoEstatusLookup.has(key)) return row;
-      const overlayRaw = nuevoEstatusLookup.get(key);
-      const overlay = overlayRaw == null ? '' : String(overlayRaw);
-      if (overlay.trim() === '') return row;
-      const currentRaw = row.NUEVO_ESTATUS == null ? '' : String(row.NUEVO_ESTATUS);
-      if (currentRaw.trim() !== '') return row;
-      if (currentRaw === overlay) return row;
-      return { ...row, NUEVO_ESTATUS: overlay };
+      if (key && nuevoEstatusLookup.has(key)) {
+        const overlayRaw = nuevoEstatusLookup.get(key);
+        const overlay = overlayRaw == null ? '' : String(overlayRaw);
+        if (overlay.trim() !== '') {
+          const currentRaw = row.NUEVO_ESTATUS == null ? '' : String(row.NUEVO_ESTATUS);
+          if (currentRaw.trim() === '' && currentRaw !== overlay) {
+            nextRow = nextRow === row ? { ...row } : nextRow;
+            nextRow.NUEVO_ESTATUS = overlay;
+          }
+        }
+      }
+
+      const pedidoKey = normalizeKeyPart(row.PEDIDO);
+      if (pedidoKey && ordenesLookup.has(pedidoKey)) {
+        const ocOverlay = ordenesLookup.get(pedidoKey) ?? '';
+        const currentOc = row.OC == null ? '' : String(row.OC);
+        if (currentOc !== ocOverlay) {
+          nextRow = nextRow === row ? { ...nextRow } : nextRow;
+          nextRow.OC = ocOverlay;
+        }
+      }
+
+      return nextRow;
     });
-  }, [baseDataRaw, nuevoEstatusLookup]);
+  }, [baseDataRaw, nuevoEstatusLookup, ordenesLookup]);
 
   useEffect(() => {
     const storedRaw = localStorage.getItem(COLUMN_VISIBILITY_STORAGE_KEY);
