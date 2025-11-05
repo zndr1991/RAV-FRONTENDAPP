@@ -302,6 +302,8 @@ function CapturaPage() {
   const [showColumnList, setShowColumnList] = useState(false);
   const [columnVisibility, setColumnVisibility] = useState({});
   const [columnVisibilityLoaded, setColumnVisibilityLoaded] = useState(false);
+  const [primarySearchText, setPrimarySearchText] = useState('');
+  const [secondarySearchText, setSecondarySearchText] = useState('');
   const gridRef = useRef(null);
   const usuario = useMemo(() => {
     try {
@@ -479,6 +481,27 @@ function CapturaPage() {
     capturaDuplicateSet.forEach(key => union.add(key));
     return union;
   }, [baseDuplicateSet, capturaDuplicateSet]);
+
+  const applySearchFilter = useCallback((rows, text) => {
+    if (!text) return rows;
+    const query = text.toString().trim().toLowerCase();
+    if (!query) return rows;
+    const safeRows = Array.isArray(rows) ? rows : [];
+    return safeRows.filter((row) => {
+      if (!row || typeof row !== 'object') return false;
+      return Object.values(row).some((value) => {
+        if (value === null || value === undefined) return false;
+        return String(value).toLowerCase().includes(query);
+      });
+    });
+  }, []);
+
+  const filteredRowData = useMemo(() => {
+    let result = Array.isArray(rowData) ? rowData : [];
+    result = applySearchFilter(result, primarySearchText);
+    result = applySearchFilter(result, secondarySearchText);
+    return result;
+  }, [applySearchFilter, primarySearchText, rowData, secondarySearchText]);
 
   const getRowClass = useCallback((params) => {
     const data = params?.data;
@@ -915,6 +938,34 @@ function CapturaPage() {
             </button>
           </div>
         </header>
+        <div className="captura-filters">
+          <div className="captura-filters__group">
+            <input
+              type="text"
+              placeholder="Buscar en la tabla…"
+              value={primarySearchText}
+              onChange={(event) => setPrimarySearchText(event.target.value)}
+            />
+            {primarySearchText && (
+              <button type="button" onClick={() => setPrimarySearchText('')}>
+                Limpiar
+              </button>
+            )}
+          </div>
+          <div className="captura-filters__group">
+            <input
+              type="text"
+              placeholder="Aplicar segundo filtro…"
+              value={secondarySearchText}
+              onChange={(event) => setSecondarySearchText(event.target.value)}
+            />
+            {secondarySearchText && (
+              <button type="button" onClick={() => setSecondarySearchText('')}>
+                Limpiar
+              </button>
+            )}
+          </div>
+        </div>
         {showColumnList && (
           <div
             style={{
@@ -949,7 +1000,7 @@ function CapturaPage() {
             <AgGridReact
               ref={gridRef}
               columnDefs={filteredColumnDefs}
-              rowData={rowData}
+              rowData={filteredRowData}
               defaultColDef={defaultColDef}
               getRowClass={getRowClass}
               rowSelection="multiple"
