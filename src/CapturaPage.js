@@ -35,6 +35,8 @@ const parseCostoToNumber = (raw) => {
   if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
   const cleaned = String(raw).replace(/[^0-9.-]/g, '').trim();
   if (cleaned === '') return NaN;
+  const containsLetters = /[a-zA-Z]/.test(String(raw));
+  if (containsLetters) return NaN;
   const parsed = Number(cleaned);
   return Number.isFinite(parsed) ? parsed : NaN;
 };
