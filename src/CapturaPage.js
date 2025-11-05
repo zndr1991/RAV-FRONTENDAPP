@@ -278,18 +278,6 @@ const compraTemplateColumns = [
   },
 ];
 
-const checklistItems = [
-  { id: 1, titulo: 'Recepción de pedido', descripcion: 'Verifica folio, piezas y documentación antes de iniciar la captura.' },
-  { id: 2, titulo: 'Validación de datos', descripcion: 'Confirma datos del cliente, VIN y combinación de pedido/OC.' },
-  { id: 3, titulo: 'Evidencia digital', descripcion: 'Adjunta fotografías o facturas cuando el proceso lo requiera.' },
-];
-
-const quickLinks = [
-  { id: 'formatos', titulo: 'Formatos de captura', descripcion: 'Plantillas vigentes para entregar reportes diarios.' },
-  { id: 'lineamientos', titulo: 'Lineamientos', descripcion: 'Criterios de validación y políticas de calidad.' },
-  { id: 'faq', titulo: 'Preguntas frecuentes', descripcion: 'Solución rápida a incidencias comunes.' },
-];
-
 function CapturaPage() {
   const [rowData, setRowData] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -845,47 +833,6 @@ function CapturaPage() {
 
   return (
     <div className="captura-page">
-      <section className="captura-card">
-        <div className="captura-card__header">
-          <div>
-            <h2 className="captura-card__title">Centro de Captura</h2>
-            <p className="captura-card__subtitle">
-              Consolida pedidos, actualiza evidencia y mantén la información lista para auditorías.
-            </p>
-          </div>
-          <div className="captura-pill">Rol: {usuario.role}</div>
-        </div>
-        <div className="captura-grid">
-          <article className="captura-panel">
-            <header className="captura-panel__header">
-              <h3>Checklist operativo</h3>
-              <span className="captura-tag">3 pasos</span>
-            </header>
-            <ul className="captura-list">
-              {checklistItems.map(item => (
-                <li key={item.id}>
-                  <h4>{item.titulo}</h4>
-                  <p>{item.descripcion}</p>
-                </li>
-              ))}
-            </ul>
-          </article>
-          <article className="captura-panel">
-            <header className="captura-panel__header">
-              <h3>Atajos rápidos</h3>
-              <span className="captura-tag captura-tag--muted">Recursos guía</span>
-            </header>
-            <div className="captura-links">
-              {quickLinks.map(link => (
-                <button key={link.id} type="button">
-                  <strong>{link.titulo}</strong>
-                  <span>{link.descripcion}</span>
-                </button>
-              ))}
-            </div>
-          </article>
-        </div>
-      </section>
       <section className="captura-card captura-table-card">
         <header className="captura-card__header captura-table-header">
           <div>
