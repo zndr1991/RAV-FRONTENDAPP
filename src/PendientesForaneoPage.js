@@ -12,12 +12,20 @@ ModuleRegistry.registerModules([AllCommunityModule]);
 const COLUMN_VISIBILITY_STORAGE_KEY = 'baseDatosColumnVisibility';
 const normalizeLocalidad = (value) => (value ?? '').toString().trim().toLowerCase();
 const normalizeKeyPart = (value) => (value ?? '').toString().trim().toUpperCase();
+const buildSiniestroItemKey = (siniestro, item) => {
+  const siniestroKey = normalizeKeyPart(siniestro);
+  const itemKey = normalizeKeyPart(item);
+  if (!siniestroKey && !itemKey) return '';
+  return `${siniestroKey}|||${itemKey}`;
+};
 const buildPedidoItemKey = (pedido, item) => {
   const pedidoKey = normalizeKeyPart(pedido);
   const itemKey = normalizeKeyPart(item);
   if (!pedidoKey && !itemKey) return '';
   return `${pedidoKey}|||${itemKey}`;
 };
+const extractSiniestro = (row) => row?.SINIESTRO ?? row?.siniestro ?? row?.Siniestro ?? '';
+const extractItem = (row) => row?.ITEM ?? row?.item ?? row?.Item ?? '';
 const normalizeStatus = (value) => (
   (value ?? '')
     .toString()
@@ -68,6 +76,7 @@ const PendientesForaneoPage = () => {
   const revertingRef = useRef(false);
   const [baseDataRaw, setBaseDataRaw] = useState([]);
   const [nuevoEstatusData, setNuevoEstatusData] = useState([]);
+  const [globalDuplicateKeys, setGlobalDuplicateKeys] = useState([]);
   const [searchText, setSearchText] = useState('');
   const [searchMode, setSearchMode] = useState('contains');
   const [secondarySearchText, setSecondarySearchText] = useState('');
@@ -276,20 +285,75 @@ const PendientesForaneoPage = () => {
     return applyTextFilter(secondary, tertiarySearchText, tertiarySearchMode);
   }, [permittedRows, searchMode, searchText, secondarySearchMode, secondarySearchText, tertiarySearchMode, tertiarySearchText]);
 
+  const globalDuplicateSet = useMemo(() => {
+    const set = new Set();
+    globalDuplicateKeys.forEach(key => {
+      if (key) set.add(key);
+    });
+    return set;
+  }, [globalDuplicateKeys]);
+
+  const localDuplicateSet = useMemo(() => {
+    if (!Array.isArray(baseDataRaw) || baseDataRaw.length === 0) return new Set();
+    const counts = new Map();
+    baseDataRaw.forEach(row => {
+      const key = buildSiniestroItemKey(extractSiniestro(row), extractItem(row));
+      if (!key) return;
+      counts.set(key, (counts.get(key) || 0) + 1);
+    });
+    const duplicates = new Set();
+    counts.forEach((count, key) => {
+      if (count > 1) duplicates.add(key);
+    });
+    return duplicates;
+  }, [baseDataRaw]);
+
+  const combinedDuplicateSet = useMemo(() => {
+    const union = new Set();
+    globalDuplicateSet.forEach(key => union.add(key));
+    localDuplicateSet.forEach(key => union.add(key));
+    return union;
+  }, [globalDuplicateSet, localDuplicateSet]);
+
+  const getRowClass = useCallback((params) => {
+    const data = params?.data;
+    if (!data) return '';
+    const key = buildSiniestroItemKey(extractSiniestro(data), extractItem(data));
+    if (key && combinedDuplicateSet.has(key)) {
+      return 'row-texto-rojo';
+    }
+    return '';
+  }, [combinedDuplicateSet]);
+
   const cargarDatos = useCallback(() => {
     fetch(`${API_BASE_URL}/api/basedatos/obtener`)
       .then(res => res.json())
       .then(data => {
         if (!Array.isArray(data)) {
           setBaseDataRaw([]);
+          setGlobalDuplicateKeys([]);
           return;
         }
+        const counts = new Map();
+        data.forEach(row => {
+          const key = buildSiniestroItemKey(extractSiniestro(row), extractItem(row));
+          if (!key) return;
+          counts.set(key, (counts.get(key) || 0) + 1);
+        });
+        const duplicates = [];
+        counts.forEach((count, key) => {
+          if (count > 1) duplicates.push(key);
+        });
+        setGlobalDuplicateKeys(duplicates);
         const foraneos = data
           .filter(row => normalizeLocalidad(row.LOCALIDAD) === 'foraneo')
           .sort((a, b) => parseFechaPedido(b.FECHA_PEDIDO) - parseFechaPedido(a.FECHA_PEDIDO));
         setBaseDataRaw(foraneos);
       })
-      .catch(() => setBaseDataRaw([]));
+      .catch(() => {
+        setBaseDataRaw([]);
+        setGlobalDuplicateKeys([]);
+      });
   }, []);
 
   const cargarNuevoEstatus = useCallback(() => {
@@ -1249,6 +1313,7 @@ const PendientesForaneoPage = () => {
             const item = data.ITEM != null ? String(data.ITEM) : '';
             return `${pedido}|||${item}`;
           }}
+          getRowClass={getRowClass}
           domLayout="normal"
           rowSelection="multiple"
           suppressMovableColumns={true}

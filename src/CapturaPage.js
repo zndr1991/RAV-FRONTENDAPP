@@ -17,6 +17,18 @@ const normalizarTaller = (valor) => {
   return valor.toString().trim().toLowerCase().replace(/\s+/g, ' ');
 };
 
+const normalizeKeyPart = (value) => (value ?? '').toString().trim().toUpperCase();
+
+const buildSiniestroItemKey = (siniestro, item) => {
+  const siniestroKey = normalizeKeyPart(siniestro);
+  const itemKey = normalizeKeyPart(item);
+  if (!siniestroKey && !itemKey) return '';
+  return `${siniestroKey}|||${itemKey}`;
+};
+
+const extractSiniestro = (row) => row?.SINIESTRO ?? row?.siniestro ?? row?.Siniestro ?? '';
+const extractItem = (row) => row?.ITEM ?? row?.item ?? row?.Item ?? '';
+
 const parseCostoToNumber = (raw) => {
   if (raw === null || raw === undefined || raw === '') return NaN;
   if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
@@ -285,6 +297,7 @@ function CapturaPage() {
   const [selectedCount, setSelectedCount] = useState(0);
   const [marking, setMarking] = useState(false);
   const [localidades, setLocalidades] = useState([]);
+  const [baseDuplicateKeys, setBaseDuplicateKeys] = useState([]);
   const gridRef = useRef(null);
   const usuario = useMemo(() => {
     try {
@@ -296,6 +309,32 @@ function CapturaPage() {
 
   const rol = (usuario.role || '').toLowerCase();
   const puedeVer = rol === 'supervisor' || rol === 'captura';
+
+  const fetchGlobalDuplicates = useCallback(() => {
+    fetch(`${API_BASE_URL}/api/basedatos/obtener`)
+      .then(res => res.json())
+      .then(data => {
+        if (!Array.isArray(data)) {
+          setBaseDuplicateKeys([]);
+          return;
+        }
+        const counts = new Map();
+        data.forEach(row => {
+          const key = buildSiniestroItemKey(extractSiniestro(row), extractItem(row));
+          if (!key) return;
+          counts.set(key, (counts.get(key) || 0) + 1);
+        });
+        const duplicates = [];
+        counts.forEach((count, key) => {
+          if (count > 1) duplicates.push(key);
+        });
+        setBaseDuplicateKeys(duplicates);
+      })
+      .catch(err => {
+        console.error('No se pudo calcular duplicados globales:', err);
+        setBaseDuplicateKeys([]);
+      });
+  }, []);
 
   const columnDefs = useMemo(
     () => baseColumnDefs.map((column) => ({
@@ -322,6 +361,46 @@ function CapturaPage() {
     }),
     [loading]
   );
+
+  const baseDuplicateSet = useMemo(() => {
+    const set = new Set();
+    baseDuplicateKeys.forEach(key => {
+      if (key) set.add(key);
+    });
+    return set;
+  }, [baseDuplicateKeys]);
+
+  const capturaDuplicateSet = useMemo(() => {
+    if (!Array.isArray(rowData) || rowData.length === 0) return new Set();
+    const counts = new Map();
+    rowData.forEach(row => {
+      const key = buildSiniestroItemKey(extractSiniestro(row), extractItem(row));
+      if (!key) return;
+      counts.set(key, (counts.get(key) || 0) + 1);
+    });
+    const duplicates = new Set();
+    counts.forEach((count, key) => {
+      if (count > 1) duplicates.add(key);
+    });
+    return duplicates;
+  }, [rowData]);
+
+  const combinedDuplicateSet = useMemo(() => {
+    const union = new Set();
+    baseDuplicateSet.forEach(key => union.add(key));
+    capturaDuplicateSet.forEach(key => union.add(key));
+    return union;
+  }, [baseDuplicateSet, capturaDuplicateSet]);
+
+  const getRowClass = useCallback((params) => {
+    const data = params?.data;
+    if (!data) return '';
+    const key = buildSiniestroItemKey(extractSiniestro(data), extractItem(data));
+    if (key && combinedDuplicateSet.has(key)) {
+      return 'row-texto-rojo';
+    }
+    return '';
+  }, [combinedDuplicateSet]);
 
   const localidadesMap = useMemo(() => {
     const diccionario = new Map();
@@ -370,19 +449,27 @@ function CapturaPage() {
       }
       setSelectedCount(0);
       setLastUpdated(new Date());
+      fetchGlobalDuplicates();
     } catch (err) {
       setRowData([]);
       setError('No se pudo cargar la información. Intenta nuevamente.');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [fetchGlobalDuplicates]);
 
   useEffect(() => {
     if (puedeVer) {
       cargarDatos();
     }
   }, [cargarDatos, puedeVer]);
+
+  useEffect(() => {
+    fetchGlobalDuplicates();
+    const handler = () => fetchGlobalDuplicates();
+    window.addEventListener('refreshBaseDatos', handler);
+    return () => window.removeEventListener('refreshBaseDatos', handler);
+  }, [fetchGlobalDuplicates]);
 
   useEffect(() => {
     let cancelado = false;
@@ -740,6 +827,7 @@ function CapturaPage() {
               columnDefs={columnDefs}
               rowData={rowData}
               defaultColDef={defaultColDef}
+              getRowClass={getRowClass}
               rowSelection="multiple"
               domLayout="normal"
               suppressMovableColumns={true}
