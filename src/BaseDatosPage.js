@@ -66,7 +66,7 @@ const ordenesColumnDefs = [
 const ALLOWED_LOCALIDADES = ['local', 'foraneo'];
 const COMPAQ_OPTIONS = ['GENERADO', 'GENERAR'];
 const ESTATUS_EDITABLE_FIELDS = new Set(['NUEVO_ESTATUS', 'ESTATUS2']);
-const CAPTURA_EDITABLE_FIELDS = new Set(['CODIGO', 'CHOFER', 'COMPAQ']);
+const CAPTURA_EDITABLE_FIELDS = new Set(['CODIGO', 'CHOFER', 'COSTO', 'COMPAQ']);
 
 const BaseDatosPage = () => {
   const usuario = JSON.parse(localStorage.getItem('usuario') || '{}');
