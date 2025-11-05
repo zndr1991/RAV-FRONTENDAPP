@@ -559,6 +559,9 @@ const PendientesForaneoPage = () => {
     body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
     h1 { font-size: 17px; margin: 0 0 10px 0; }
     table { border-collapse: collapse; width: auto; min-width: 100%; table-layout: auto; }
+    thead { display: table-header-group; }
+    tbody { display: table-row-group; }
+    tbody tr { page-break-inside: avoid; }
     th, td {
       border: 1px solid #333;
       padding: 3px 6px;
