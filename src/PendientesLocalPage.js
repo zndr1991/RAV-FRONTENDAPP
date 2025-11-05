@@ -506,7 +506,7 @@ const PendientesLocalPage = () => {
     if (typeof window === 'undefined') return;
 
     const visibleColumns = columnDefs.filter(col => (
-      col.field && (columnVisibilityLoaded ? columnVisibility[col.field] !== false : true)
+      col.field && col.field !== SELECTION_FIELD && (columnVisibilityLoaded ? columnVisibility[col.field] !== false : true)
     ));
 
     if (!visibleColumns.length) {
@@ -514,8 +514,15 @@ const PendientesLocalPage = () => {
       return;
     }
 
-    if (!Array.isArray(filteredData) || !filteredData.length) {
-      alert('No hay datos para imprimir.');
+    const api = gridRef.current?.api;
+    if (!api) {
+      alert('No se pudo preparar la impresión.');
+      return;
+    }
+
+    const selectedRows = api.getSelectedRows();
+    if (!Array.isArray(selectedRows) || !selectedRows.length) {
+      alert('Selecciona al menos un renglón para imprimir.');
       return;
     }
 
@@ -533,7 +540,7 @@ const PendientesLocalPage = () => {
       .map(col => `<th>${escapeHtml(col.headerName || col.field)}</th>`)
       .join('');
 
-    const rowsHtml = filteredData
+    const rowsHtml = selectedRows
       .map(row => {
         const cells = visibleColumns
           .map(col => `<td>${escapeHtml(row[col.field])}</td>`)
@@ -555,12 +562,17 @@ const PendientesLocalPage = () => {
     th, td {
       border: 1px solid #333;
       padding: 3px 6px;
-  font-size: 9.5px;
-  min-width: 60px;
+      font-size: 11px;
+      min-width: 60px;
       word-break: break-word;
       white-space: normal;
     }
-    th { background: #1f2937; color: #fff; text-align: left; }
+    th {
+      background: #d1d5db;
+      color: #111827;
+      text-align: left;
+      font-weight: 700;
+    }
     tr:nth-child(even) { background: #f3f4f6; }
   </style>
 </head>
@@ -599,7 +611,7 @@ const PendientesLocalPage = () => {
       console.error('No se pudo preparar la impresión:', err);
       alert('No se pudo preparar la impresión.');
     }
-  }, [columnDefs, columnVisibility, columnVisibilityLoaded, filteredData]);
+  }, [columnDefs, columnVisibility, columnVisibilityLoaded]);
 
   const updateInspectorForNode = useCallback((node, field, updater) => {
     setCellInspector(prev => {
