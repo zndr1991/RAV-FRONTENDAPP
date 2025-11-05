@@ -1373,34 +1373,6 @@ const BaseDatosPage = () => {
     }
   }, [cargarDatos, isAssigningLocalidades]);
 
-  const handleDeleteSelected = async () => {
-    if (!esSupervisor) return;
-    if (!gridRef.current) return;
-    const selectedRows = gridRef.current.api.getSelectedRows();
-    if (selectedRows.length === 0) {
-      alert('Selecciona al menos un renglón para borrar.');
-      return;
-    }
-    const ids = selectedRows.map(row => row.id);
-    try {
-  const res = await fetch(`${API_BASE_URL}/api/basedatos/borrar`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids })
-      });
-      const data = await res.json();
-      if (data.ok) {
-        cargarDatos();
-        setSelectedCount(0);
-        gridRef.current.api.deselectAll();
-      } else {
-        alert(data.mensaje || 'Error al borrar');
-      }
-    } catch (err) {
-      alert('Error de conexión al borrar');
-    }
-  };
-
   const handleDeleteNuevoEstatus = async () => {
     if (!esSupervisor) return;
     if (!nuevoEstatusGridRef.current) return;
@@ -1798,15 +1770,6 @@ const BaseDatosPage = () => {
           <section style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 16, padding: 20 }}>
             <h2 style={{ marginTop: 0 }}>Base de Datos</h2>
             <div style={{ marginBottom: 10 }}>
-              {esSupervisor && (
-                <button
-                  onClick={handleDeleteSelected}
-                  style={{ background: '#dc2626', color: '#fff', fontWeight: 'bold', padding: '6px 14px', borderRadius: 8, border: 'none' }}
-                  disabled={selectedCount === 0}
-                >
-                  Borrar seleccionados
-                </button>
-              )}
               <span style={{ marginLeft: 16, fontWeight: 'bold', color: '#047857' }}>
                 Seleccionadas: {selectedCount}
               </span>
