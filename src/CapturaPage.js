@@ -11,6 +11,7 @@ import { API_BASE_URL, SOCKET_URL } from './config';
 ModuleRegistry.registerModules([AllCommunityModule]);
 
 const CAPTURA_EDITABLE_FIELDS = new Set(['CODIGO', 'CHOFER']);
+const COLUMN_VISIBILITY_STORAGE_KEY = 'capturaColumnVisibility';
 
 const normalizarTaller = (valor) => {
   if (!valor) return '';
@@ -298,6 +299,9 @@ function CapturaPage() {
   const [marking, setMarking] = useState(false);
   const [localidades, setLocalidades] = useState([]);
   const [baseDuplicateKeys, setBaseDuplicateKeys] = useState([]);
+  const [showColumnList, setShowColumnList] = useState(false);
+  const [columnVisibility, setColumnVisibility] = useState({});
+  const [columnVisibilityLoaded, setColumnVisibilityLoaded] = useState(false);
   const gridRef = useRef(null);
   const usuario = useMemo(() => {
     try {
@@ -344,6 +348,31 @@ function CapturaPage() {
     []
   );
 
+  const baseColumnFields = useMemo(
+    () => columnDefs
+      .map(col => col.field)
+      .filter((field) => Boolean(field)),
+    [columnDefs]
+  );
+
+  const columnLabels = useMemo(() => {
+    const labels = {};
+    columnDefs.forEach(col => {
+      if (col.field) {
+        labels[col.field] = col.headerName || col.field;
+      }
+    });
+    return labels;
+  }, [columnDefs]);
+
+  const defaultColumnVisibility = useMemo(() => {
+    const defaults = {};
+    baseColumnFields.forEach(field => {
+      defaults[field] = true;
+    });
+    return defaults;
+  }, [baseColumnFields]);
+
   const defaultColDef = useMemo(
     () => ({
       resizable: true,
@@ -361,6 +390,65 @@ function CapturaPage() {
     }),
     [loading]
   );
+
+  useEffect(() => {
+    if (columnVisibilityLoaded) return;
+    const storedRaw = localStorage.getItem(COLUMN_VISIBILITY_STORAGE_KEY);
+    if (storedRaw) {
+      try {
+        const stored = JSON.parse(storedRaw);
+        setColumnVisibility({ ...defaultColumnVisibility, ...stored });
+        setColumnVisibilityLoaded(true);
+        return;
+      } catch (err) {
+        console.warn('No se pudo leer la visibilidad guardada en captura:', err);
+      }
+    }
+    setColumnVisibility(defaultColumnVisibility);
+    setColumnVisibilityLoaded(true);
+  }, [columnVisibilityLoaded, defaultColumnVisibility]);
+
+  useEffect(() => {
+    if (!columnVisibilityLoaded) return;
+    localStorage.setItem(COLUMN_VISIBILITY_STORAGE_KEY, JSON.stringify(columnVisibility));
+  }, [columnVisibility, columnVisibilityLoaded]);
+
+  useEffect(() => {
+    if (!columnVisibilityLoaded) return;
+    setColumnVisibility(prev => {
+      const next = { ...prev };
+      let changed = false;
+      baseColumnFields.forEach(field => {
+        if (typeof next[field] === 'undefined') {
+          next[field] = true;
+          changed = true;
+        }
+      });
+      Object.keys(next).forEach(field => {
+        if (!baseColumnFields.includes(field)) {
+          delete next[field];
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [baseColumnFields, columnVisibilityLoaded]);
+
+  const handleToggleColumnVisibility = useCallback((field) => {
+    if (!columnVisibilityLoaded) return;
+    setColumnVisibility(prev => {
+      const currentlyVisible = prev[field] !== false;
+      return { ...prev, [field]: !currentlyVisible };
+    });
+  }, [columnVisibilityLoaded]);
+
+  const filteredColumnDefs = useMemo(() => {
+    if (!columnVisibilityLoaded) return columnDefs;
+    return columnDefs.filter(col => {
+      if (!col.field) return true;
+      return columnVisibility[col.field] !== false;
+    });
+  }, [columnDefs, columnVisibility, columnVisibilityLoaded]);
 
   const baseDuplicateSet = useMemo(() => {
     const set = new Set();
@@ -787,6 +875,14 @@ function CapturaPage() {
             <span className="captura-selection">Seleccionados: {selectedCount}</span>
             <button
               type="button"
+              className="captura-template"
+              onClick={() => setShowColumnList(prev => !prev)}
+              disabled={loading}
+            >
+              {showColumnList ? 'Ocultar columnas' : 'Seleccionar columnas'}
+            </button>
+            <button
+              type="button"
               className="captura-refresh"
               onClick={cargarDatos}
               disabled={loading}
@@ -819,12 +915,40 @@ function CapturaPage() {
             </button>
           </div>
         </header>
+        {showColumnList && (
+          <div
+            style={{
+              margin: '12px 0',
+              padding: 12,
+              borderRadius: 12,
+              border: '1px solid #e5e7eb',
+              background: '#f9fafb',
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 10
+            }}
+          >
+            {baseColumnFields.map(field => (
+              <label
+                key={field}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 180, fontSize: 13 }}
+              >
+                <input
+                  type="checkbox"
+                  checked={columnVisibility[field] !== false}
+                  onChange={() => handleToggleColumnVisibility(field)}
+                />
+                <span>{columnLabels[field] || field}</span>
+              </label>
+            ))}
+          </div>
+        )}
         {error && <div className="captura-alert">{error}</div>}
         <div className="captura-grid-wrapper">
           <div className="ag-theme-alpine captura-grid-table">
             <AgGridReact
               ref={gridRef}
-              columnDefs={columnDefs}
+              columnDefs={filteredColumnDefs}
               rowData={rowData}
               defaultColDef={defaultColDef}
               getRowClass={getRowClass}
