@@ -9,6 +9,26 @@ import { API_BASE_URL, SOCKET_URL } from './config';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
+const normalizeKeyPart = (value) => (value ?? '').toString().trim().toUpperCase();
+
+const buildSiniestroItemKey = (siniestro, item) => {
+  const siniestroKey = normalizeKeyPart(siniestro);
+  const itemKey = normalizeKeyPart(item);
+  if (!siniestroKey && !itemKey) return '';
+  return `${siniestroKey}|||${itemKey}`;
+};
+
+const extractSiniestro = (row) => row?.SINIESTRO ?? row?.siniestro ?? row?.Siniestro ?? '';
+const extractItem = (row) => row?.ITEM ?? row?.item ?? row?.Item ?? '';
+const extractPedido = (row) => row?.PEDIDO ?? row?.pedido ?? row?.Pedido ?? '';
+
+const buildPedidoItemKey = (pedido, item) => {
+  const pedidoKey = normalizeKeyPart(pedido);
+  const itemKey = normalizeKeyPart(item);
+  if (!pedidoKey && !itemKey) return '';
+  return `${pedidoKey}|||${itemKey}`;
+};
+
 function excelDateToJSDate(serial) {
   if (typeof serial !== 'number' || Number.isNaN(serial)) return '';
 
@@ -135,7 +155,8 @@ const LOCAL_STORAGE_PANEL_KEY = 'showColumnPanel';
 const CodificarPage = () => {
   const [rowData, setRowData] = useState([]);
   const [excelData, setExcelData] = useState([]);
-  const [paresPedidoItem, setParesPedidoItem] = useState([]);
+  const [paresSiniestroItemBase, setParesSiniestroItemBase] = useState([]);
+  const [paresPedidoItemBase, setParesPedidoItemBase] = useState([]);
   const fileInputRef = useRef();
   const [visibleColumns, setVisibleColumns] = useState(() => {
     const saved = localStorage.getItem(LOCAL_STORAGE_COLS_KEY);
@@ -257,14 +278,39 @@ const CodificarPage = () => {
   }, [showColumnPanel]);
 
   useEffect(() => {
-  fetch(`${API_BASE_URL}/api/basedatos/obtener`)
-      .then(res => res.json())
-      .then(data => {
-        const pares = Array.isArray(data)
-          ? data.map(row => `${row.PEDIDO}|||${row.ITEM}`)
-          : [];
-        setParesPedidoItem(pares);
-      });
+    const cargarClavesBase = () => {
+      fetch(`${API_BASE_URL}/api/basedatos/obtener`)
+        .then(res => res.json())
+        .then(data => {
+          if (!Array.isArray(data)) {
+            setParesSiniestroItemBase([]);
+            setParesPedidoItemBase([]);
+            return;
+          }
+
+          const siniestroPairs = [];
+          const pedidoPairs = [];
+
+          data.forEach(row => {
+            const sinKey = buildSiniestroItemKey(extractSiniestro(row), extractItem(row));
+            if (sinKey) siniestroPairs.push(sinKey);
+            const pedKey = buildPedidoItemKey(extractPedido(row), extractItem(row));
+            if (pedKey) pedidoPairs.push(pedKey);
+          });
+
+          setParesSiniestroItemBase(siniestroPairs);
+          setParesPedidoItemBase(pedidoPairs);
+        })
+        .catch(err => {
+          console.error('No se pudieron cargar claves de base de datos:', err);
+          setParesSiniestroItemBase([]);
+          setParesPedidoItemBase([]);
+        });
+    };
+
+    cargarClavesBase();
+    window.addEventListener('refreshBaseDatos', cargarClavesBase);
+    return () => window.removeEventListener('refreshBaseDatos', cargarClavesBase);
   }, []); // SOLO una vez al montar
 
   useEffect(() => {
@@ -421,6 +467,50 @@ const CodificarPage = () => {
     }
   };
 
+  const siniestroItemBaseSet = useMemo(() => {
+    const source = Array.isArray(paresSiniestroItemBase) ? paresSiniestroItemBase : [];
+    return new Set(source.filter(Boolean));
+  }, [paresSiniestroItemBase]);
+
+  const pedidoItemBaseSet = useMemo(() => {
+    const source = Array.isArray(paresPedidoItemBase) ? paresPedidoItemBase : [];
+    return new Set(source.filter(Boolean));
+  }, [paresPedidoItemBase]);
+
+  const siniestroItemDuplicadosCodificar = useMemo(() => {
+    if (!Array.isArray(rowData) || rowData.length === 0) {
+      return new Set();
+    }
+    const counts = new Map();
+    rowData.forEach(row => {
+      const key = buildSiniestroItemKey(extractSiniestro(row), extractItem(row));
+      if (!key) return;
+      counts.set(key, (counts.get(key) || 0) + 1);
+    });
+    const duplicados = new Set();
+    counts.forEach((count, key) => {
+      if (count > 1) duplicados.add(key);
+    });
+    return duplicados;
+  }, [rowData]);
+
+  const pedidoItemDuplicadosCodificar = useMemo(() => {
+    if (!Array.isArray(rowData) || rowData.length === 0) {
+      return new Set();
+    }
+    const counts = new Map();
+    rowData.forEach(row => {
+      const key = buildPedidoItemKey(extractPedido(row), extractItem(row));
+      if (!key) return;
+      counts.set(key, (counts.get(key) || 0) + 1);
+    });
+    const duplicados = new Set();
+    counts.forEach((count, key) => {
+      if (count > 1) duplicados.add(key);
+    });
+    return duplicados;
+  }, [rowData]);
+
   const handleEnviarSeleccionados = async () => {
     if (!gridRef.current) return;
     const selectedRows = gridRef.current.api.getSelectedRows();
@@ -428,26 +518,40 @@ const CodificarPage = () => {
       alert('Selecciona al menos un renglón para enviar.');
       return;
     }
+    const duplicadosSiniestro = [];
+    const bloqueadosPedido = [];
+    const clavesSiniestroSeleccionadas = new Set();
+    const clavesPedidoSeleccionadas = new Set();
+    const filasAEnviar = [];
 
-    const paresSeleccionados = selectedRows.map(row => `${row.PEDIDO}|||${row.ITEM}`);
-    const duplicados = [];
-    const noDuplicados = [];
-
-    selectedRows.forEach((row, idx) => {
-      if (paresPedidoItem.includes(paresSeleccionados[idx])) {
-        duplicados.push(row);
-      } else {
-        noDuplicados.push(row);
+    selectedRows.forEach(row => {
+      const sinKey = buildSiniestroItemKey(extractSiniestro(row), extractItem(row));
+      if (sinKey) {
+        if (siniestroItemBaseSet.has(sinKey) || clavesSiniestroSeleccionadas.has(sinKey)) {
+          duplicadosSiniestro.push(row);
+        }
+        clavesSiniestroSeleccionadas.add(sinKey);
       }
+
+      const pedKey = buildPedidoItemKey(extractPedido(row), extractItem(row));
+      if (pedKey) {
+        if (pedidoItemBaseSet.has(pedKey) || clavesPedidoSeleccionadas.has(pedKey)) {
+          bloqueadosPedido.push(row);
+          return;
+        }
+        clavesPedidoSeleccionadas.add(pedKey);
+      }
+
+      filasAEnviar.push(row);
     });
 
-    if (noDuplicados.length === 0) {
-      alert('Todos los seleccionados ya existen en base de datos. No se envió ninguno.');
+    if (filasAEnviar.length === 0) {
+      alert('Todos los seleccionados tienen PEDIDO + ITEM duplicado y no se enviaron.');
       return;
     }
 
     // Mapea los datos exactamente con los nombres de columnas de la base de datos
-    const datosAEnviar = noDuplicados.map(completarFila);
+    const datosAEnviar = filasAEnviar.map(completarFila);
 
     console.log('Enviando a base de datos:', datosAEnviar);
     try {
@@ -459,7 +563,7 @@ const CodificarPage = () => {
       const data = await res.json();
       console.log('Respuesta del backend:', data);
       if (data.ok) {
-        const ids = noDuplicados.map(row => row.id);
+  const ids = filasAEnviar.map(row => row.id);
   await fetch(`${API_BASE_URL}/api/excel/borrar`, {
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json' },
@@ -472,10 +576,36 @@ const CodificarPage = () => {
 
         window.dispatchEvent(new Event('refreshBaseDatos'));
 
-        let mensaje = '¡Filas enviadas a base de datos y eliminadas de codificar!';
-        if (duplicados.length > 0) {
-          mensaje += `\n\nNo se enviaron ${duplicados.length} filas duplicadas (PEDIDO + ITEM ya existen):\n` +
-            duplicados.map(row => `PEDIDO: ${row.PEDIDO} | ITEM: ${row.ITEM}`).join('\n');
+        setParesSiniestroItemBase(prev => {
+          const merged = new Set(prev);
+          filasAEnviar.forEach(row => {
+            const clave = buildSiniestroItemKey(extractSiniestro(row), extractItem(row));
+            if (clave) {
+              merged.add(clave);
+            }
+          });
+          return Array.from(merged);
+        });
+
+        setParesPedidoItemBase(prev => {
+          const merged = new Set(prev);
+          filasAEnviar.forEach(row => {
+            const clave = buildPedidoItemKey(extractPedido(row), extractItem(row));
+            if (clave) {
+              merged.add(clave);
+            }
+          });
+          return Array.from(merged);
+        });
+
+        let mensaje = `¡Filas enviadas a base de datos y eliminadas de codificar! Total enviadas: ${filasAEnviar.length}.`;
+        if (duplicadosSiniestro.length > 0) {
+          mensaje += `\n\nAdvertencia: ${duplicadosSiniestro.length} fila(s) tienen SINIESTRO + ITEM duplicado. Se enviaron de todas formas:` +
+            `\n` + duplicadosSiniestro.map(row => `SINIESTRO: ${row.SINIESTRO || ''} | ITEM: ${row.ITEM || ''}`).join('\n');
+        }
+        if (bloqueadosPedido.length > 0) {
+          mensaje += `\n\nNo se enviaron ${bloqueadosPedido.length} fila(s) por PEDIDO + ITEM duplicado:` +
+            `\n` + bloqueadosPedido.map(row => `PEDIDO: ${row.PEDIDO || ''} | ITEM: ${row.ITEM || ''}`).join('\n');
         }
         alert(mensaje);
       } else {
@@ -487,14 +617,24 @@ const CodificarPage = () => {
   };
 
   const getRowClass = params => {
-    const par = `${params.data.PEDIDO}|||${params.data.ITEM}`;
-    if (paresPedidoItem.includes(par)) {
-      return 'row-duplicada-basedatos';
+    const data = params.data || {};
+    const clave = buildSiniestroItemKey(extractSiniestro(data), extractItem(data));
+    const clases = [];
+
+    if (clave && (siniestroItemBaseSet.has(clave) || siniestroItemDuplicadosCodificar.has(clave))) {
+      clases.push('row-texto-rojo');
     }
-    if (params.data.CODIGO && params.data.CODIGO.trim() !== "") {
-      return 'row-codigo-lleno';
+
+    const pedidoClave = buildPedidoItemKey(extractPedido(data), extractItem(data));
+    if (pedidoClave && (pedidoItemBaseSet.has(pedidoClave) || pedidoItemDuplicadosCodificar.has(pedidoClave))) {
+      clases.push('row-pedido-duplicado');
     }
-    return '';
+
+    if (data.CODIGO && data.CODIGO.trim() !== "") {
+      clases.push('row-codigo-lleno');
+    }
+
+    return clases.join(' ');
   };
 
   const handleCellEditingStarted = params => {

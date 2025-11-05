@@ -210,3 +210,20 @@
     display: none;
   }
 }
+
+.ag-row.row-texto-rojo,
+.ag-row.ag-row-pinned.row-texto-rojo {
+  color: #b91c1c !important;
+  font-weight: 600;
+}
+
+.ag-row.row-texto-rojo .ag-cell,
+.ag-row.ag-row-pinned.row-texto-rojo .ag-cell {
+  color: inherit !important;
+  font-weight: inherit;
+}
+
+.ag-row.row-pedido-duplicado,
+.ag-row.ag-row-pinned.row-pedido-duplicado {
+  background-color: rgba(248, 113, 113, 0.16) !important;
+}

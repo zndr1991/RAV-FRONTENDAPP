@@ -50,6 +50,13 @@ const buildPedidoItemKey = (pedido, item) => {
   return `${pedidoKey}|||${itemKey}`;
 };
 
+const buildSiniestroItemKey = (siniestro, item) => {
+  const siniestroKey = normalizeKeyPart(siniestro);
+  const itemKey = normalizeKeyPart(item);
+  if (!siniestroKey && !itemKey) return '';
+  return `${siniestroKey}|||${itemKey}`;
+};
+
 const ordenesColumnDefs = [
   { headerName: '', field: 'checked', checkboxSelection: true, headerCheckboxSelection: true, width: 30, pinned: 'left' },
   { headerName: 'PEDIDO', field: 'PEDIDO', flex: 1, minWidth: 160 },
@@ -374,6 +381,30 @@ const BaseDatosPage = () => {
       return nextRow;
     });
   }, [baseDataRaw, nuevoEstatusLookup, ordenesLookup]);
+
+  const siniestroItemDuplicateSet = useMemo(() => {
+    if (!Array.isArray(principalRowData) || principalRowData.length === 0) {
+      return new Set();
+    }
+    const counts = new Map();
+    principalRowData.forEach(row => {
+      const key = buildSiniestroItemKey(row?.SINIESTRO, row?.ITEM);
+      if (!key) return;
+      counts.set(key, (counts.get(key) || 0) + 1);
+    });
+    const duplicates = new Set();
+    counts.forEach((count, key) => {
+      if (count > 1) duplicates.add(key);
+    });
+    return duplicates;
+  }, [principalRowData]);
+
+  const getPrincipalRowClass = useCallback((params) => {
+    const data = params?.data;
+    if (!data) return '';
+    const key = buildSiniestroItemKey(data.SINIESTRO, data.ITEM);
+    return key && siniestroItemDuplicateSet.has(key) ? 'row-texto-rojo' : '';
+  }, [siniestroItemDuplicateSet]);
 
   useEffect(() => {
     const storedRaw = localStorage.getItem(COLUMN_VISIBILITY_STORAGE_KEY);
@@ -1922,6 +1953,7 @@ const BaseDatosPage = () => {
                 rowData={filteredDataMemo}
                 rowSelection="multiple"
                 getRowId={getPrincipalRowId}
+                getRowClass={getPrincipalRowClass}
                 domLayout="normal"
                 suppressHorizontalScroll={false}
                 suppressMovableColumns={true}

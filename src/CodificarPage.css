@@ -403,10 +403,6 @@
   --ag-row-hover-color: rgba(99, 102, 241, 0.12);
 }
 
-.row-duplicada-basedatos {
-  background-color: rgba(239, 68, 68, 0.15) !important;
-}
-
 .row-codigo-lleno {
   background-color: rgba(45, 212, 191, 0.18) !important;
 }
