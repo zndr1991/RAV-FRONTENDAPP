@@ -57,8 +57,9 @@ const ordenesColumnDefs = [
 ];
 
 const ALLOWED_LOCALIDADES = ['local', 'foraneo'];
+const COMPAQ_OPTIONS = ['GENERADO', 'GENERAR'];
 const ESTATUS_EDITABLE_FIELDS = new Set(['NUEVO_ESTATUS', 'ESTATUS2']);
-const CAPTURA_EDITABLE_FIELDS = new Set(['CODIGO', 'CHOFER']);
+const CAPTURA_EDITABLE_FIELDS = new Set(['CODIGO', 'CHOFER', 'COMPAQ']);
 
 const BaseDatosPage = () => {
   const usuario = JSON.parse(localStorage.getItem('usuario') || '{}');
@@ -174,6 +175,16 @@ const BaseDatosPage = () => {
           cellEditor: 'agSelectCellEditor',
           cellEditorParams: {
             values: ALLOWED_LOCALIDADES
+          }
+        };
+      }
+      if (column.field === 'COMPAQ') {
+        return {
+          ...column,
+          editable: () => esSupervisor,
+          cellEditor: 'agSelectCellEditor',
+          cellEditorParams: {
+            values: COMPAQ_OPTIONS
           }
         };
       }
@@ -806,8 +817,27 @@ const BaseDatosPage = () => {
     }
 
     if (requiereSupervisor) {
-      const finalValue = incomingValue.trim();
-      if (previousValue === finalValue) {
+  const trimmedIncoming = incomingValue.trim();
+  const finalValue = field === 'COMPAQ' ? trimmedIncoming.toUpperCase() : trimmedIncoming;
+  const previousComparable = field === 'COMPAQ' ? previousValue.trim().toUpperCase() : previousValue;
+
+      if (field === 'COMPAQ') {
+        if (!finalValue) {
+          setNodeValue(previousValue);
+          notifyApplied(previousValue, { persisted: false, reverted: true });
+          handleFailure();
+          return { success: false };
+        }
+        if (!COMPAQ_OPTIONS.includes(finalValue)) {
+          alert('Selecciona "GENERADO" o "GENERAR".');
+          setNodeValue(previousValue);
+          notifyApplied(previousValue, { persisted: false, reverted: true });
+          handleFailure();
+          return { success: false };
+        }
+      }
+
+      if (previousComparable === finalValue) {
         cancelLivePersist(updateKey);
         if (currentGridValue !== finalValue) {
           applyGridValue(finalValue);
@@ -980,6 +1010,9 @@ const BaseDatosPage = () => {
     if (field === 'LOCALIDAD') {
       const matchingOption = ALLOWED_LOCALIDADES.find(option => option.toLowerCase() === normalizedValue.toLowerCase());
       inspectorValue = matchingOption || normalizedValue.toLowerCase();
+    } else if (field === 'COMPAQ') {
+      const matchingCompaq = COMPAQ_OPTIONS.find(option => option.toLowerCase() === normalizedValue.toLowerCase());
+      inspectorValue = matchingCompaq || '';
     }
 
     inspectorCommitRef.current = false;
@@ -1119,11 +1152,14 @@ const BaseDatosPage = () => {
     if (!cellEditorDialog) return;
     const field = cellEditorDialog.field;
     if (!canEditField(field)) return;
-    const nextValue = event?.target?.value ?? '';
+    let nextValue = event?.target?.value ?? '';
+    if (field === 'COMPAQ') {
+      nextValue = nextValue.toString().trim().toUpperCase();
+    }
 
     handleInspectorChange(field, nextValue);
 
-    if (field === 'LOCALIDAD') {
+    if (field === 'LOCALIDAD' || field === 'COMPAQ') {
       commitInspectorDialog({
         ...cellEditorDialog,
         value: nextValue,
@@ -1204,9 +1240,12 @@ const BaseDatosPage = () => {
     const latestData = inspectorState.rowNode.data || {};
     const rawValue = latestData[inspectorField];
     const normalizedValue = rawValue == null ? '' : String(rawValue);
-    const nextValue = inspectorField === 'LOCALIDAD'
-      ? (ALLOWED_LOCALIDADES.find(option => option.toLowerCase() === normalizedValue.toLowerCase()) || normalizedValue.toLowerCase())
-      : normalizedValue;
+    let nextValue = normalizedValue;
+    if (inspectorField === 'LOCALIDAD') {
+      nextValue = ALLOWED_LOCALIDADES.find(option => option.toLowerCase() === normalizedValue.toLowerCase()) || normalizedValue.toLowerCase();
+    } else if (inspectorField === 'COMPAQ') {
+      nextValue = COMPAQ_OPTIONS.find(option => option.toLowerCase() === normalizedValue.toLowerCase()) || '';
+    }
     setCellEditorDialog(prev => {
       if (!prev) return prev;
       if (prev.rowNode !== inspectorState.rowNode || prev.field !== inspectorField) return prev;
@@ -1612,7 +1651,7 @@ const BaseDatosPage = () => {
             {inspectorField ? (
               <div>
                 {inspectorIsEditable ? (
-                  inspectorField === 'LOCALIDAD' ? (
+                  inspectorField === 'LOCALIDAD' || inspectorField === 'COMPAQ' ? (
                     <select
                       ref={dialogInputRef}
                       value={inspectorValue}
@@ -1628,8 +1667,15 @@ const BaseDatosPage = () => {
                         fontSize: 13
                       }}
                     >
-                      <option value="">Selecciona una opción</option>
-                      {ALLOWED_LOCALIDADES.map(option => (
+                      {inspectorField === 'LOCALIDAD' && (
+                        <option value="">Selecciona una opción</option>
+                      )}
+                      {inspectorField === 'COMPAQ' && inspectorValue === '' && (
+                        <option value="" disabled>
+                          Selecciona una opción
+                        </option>
+                      )}
+                      {(inspectorField === 'LOCALIDAD' ? ALLOWED_LOCALIDADES : COMPAQ_OPTIONS).map(option => (
                         <option key={option} value={option}>
                           {option}
                         </option>
