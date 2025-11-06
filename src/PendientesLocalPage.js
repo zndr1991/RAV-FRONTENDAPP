@@ -1002,6 +1002,7 @@ const PendientesLocalPage = () => {
 
   const handleExportVisibleToExcel = useCallback(() => {
     const api = gridRef.current?.api;
+    const columnApi = gridRef.current?.columnApi;
     if (!api) {
       alert('No se pudo acceder a la tabla para exportar.');
       return;
@@ -1022,7 +1023,31 @@ const PendientesLocalPage = () => {
     const rows = [];
     api.forEachNodeAfterFilterAndSort(node => {
       const row = displayedColumns.map(column => {
-        const rawValue = api.getValue(column, node);
+        const colDef = column.getColDef();
+        let rawValue;
+
+        if (typeof colDef.valueGetter === 'function') {
+          try {
+            rawValue = colDef.valueGetter({
+              api,
+              columnApi,
+              context: api?.context,
+              data: node.data,
+              node,
+              colDef,
+              column,
+              getValue: (field) => (node?.data ? node.data[field] : undefined)
+            });
+          } catch (err) {
+            console.error('No se pudo obtener el valor calculado:', err);
+            rawValue = null;
+          }
+        } else if (colDef.field) {
+          rawValue = node?.data ? node.data[colDef.field] : undefined;
+        } else {
+          rawValue = node?.data ? node.data[column.getColId()] : undefined;
+        }
+
         if (rawValue === null || typeof rawValue === 'undefined') return '';
         if (rawValue instanceof Date) return rawValue.toISOString();
         if (typeof rawValue === 'object') return JSON.stringify(rawValue);
