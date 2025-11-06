@@ -1051,6 +1051,111 @@ const BaseDatosPage = () => {
     setCanUndo(stack.length > 0);
   }, []);
 
+  const handleExportPrincipalToExcel = useCallback(() => {
+    const api = gridRef.current?.api;
+    const columnApi = gridRef.current?.columnApi;
+    if (!api) {
+      alert('No se pudo acceder a la tabla para exportar.');
+      return;
+    }
+
+    const flattenDefs = (defs) => {
+      const collected = [];
+      defs?.forEach(def => {
+        if (!def) return;
+        if (Array.isArray(def.children) && def.children.length) {
+          collected.push(...flattenDefs(def.children));
+        } else {
+          collected.push(def);
+        }
+      });
+      return collected;
+    };
+
+    const columnInstances = columnApi?.getAllColumns?.() || [];
+    const columnDescriptors = columnInstances.length
+      ? columnInstances.map(column => ({
+          column,
+          colDef: column.getColDef?.() || {}
+        }))
+      : flattenDefs(columnDefs).map(colDef => ({ column: null, colDef }));
+
+    const exportableDescriptors = columnDescriptors.filter(({ colDef }) => {
+      if (!colDef) return false;
+      if (colDef.suppressExport) return false;
+      if (colDef.field === 'checked') return false;
+      if (colDef.checkboxSelection || colDef.headerCheckboxSelection) return false;
+      if (!colDef.field && typeof colDef.valueGetter !== 'function') return false;
+      return true;
+    });
+
+    if (!exportableDescriptors.length) {
+      alert('No hay columnas disponibles para exportar.');
+      return;
+    }
+
+    const rows = [];
+    api.forEachNodeAfterFilterAndSort(node => {
+      const row = exportableDescriptors.map(({ column, colDef }) => {
+        let rawValue;
+
+        if (typeof colDef.valueGetter === 'function') {
+          try {
+            rawValue = colDef.valueGetter({
+              api,
+              columnApi,
+              context: api?.context,
+              data: node.data,
+              node,
+              colDef,
+              column,
+              getValue: (field) => (node?.data ? node.data[field] : undefined)
+            });
+          } catch (err) {
+            console.error('No se pudo obtener el valor calculado:', err);
+            rawValue = null;
+          }
+        } else if (colDef.field) {
+          rawValue = node?.data ? node.data[colDef.field] : undefined;
+        } else if (column && typeof column.getColId === 'function') {
+          rawValue = node?.data ? node.data[column.getColId()] : undefined;
+        } else if (colDef.colId) {
+          rawValue = node?.data ? node.data[colDef.colId] : undefined;
+        } else {
+          rawValue = undefined;
+        }
+
+        if (rawValue === null || typeof rawValue === 'undefined') return '';
+        if (rawValue instanceof Date) return rawValue.toISOString();
+        if (typeof rawValue === 'object') return JSON.stringify(rawValue);
+        return rawValue;
+      });
+      rows.push(row);
+    });
+
+    if (!rows.length) {
+      alert('No hay registros para exportar.');
+      return;
+    }
+
+    const headerRow = exportableDescriptors.map(({ column, colDef }, index) => {
+      const displayName = column && columnApi?.getDisplayNameForColumn?.(column, 'header');
+      if (displayName) return displayName;
+      if (colDef.headerName) return colDef.headerName;
+      if (colDef.field) return colDef.field;
+      if (colDef.colId) return colDef.colId;
+      if (column && typeof column.getColId === 'function') return column.getColId();
+      return `Columna ${index + 1}`;
+    });
+
+    const worksheet = XLSX.utils.aoa_to_sheet([headerRow, ...rows]);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Base de Datos');
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const fileName = `base-datos-${timestamp}.xlsx`;
+    XLSX.writeFile(workbook, fileName);
+  }, [columnDefs]);
+
   const updateInspectorFromParams = useCallback((params) => {
     const field = params?.colDef?.field;
     if (!field) {
@@ -1800,6 +1905,20 @@ const BaseDatosPage = () => {
                 style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #d1fae5', background: isAssigningLocalidades ? '#e5e7eb' : '#bbf7d0', cursor: isAssigningLocalidades ? 'not-allowed' : 'pointer', fontWeight: 600 }}
               >
                 {isAssigningLocalidades ? 'Asignando...' : 'Completar localidades'}
+              </button>
+              <button
+                type="button"
+                onClick={handleExportPrincipalToExcel}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: 8,
+                  border: '1px solid #d0d5dd',
+                  background: '#fef3c7',
+                  cursor: 'pointer',
+                  fontWeight: 600
+                }}
+              >
+                Exportar vista
               </button>
               <button
                 type="button"
