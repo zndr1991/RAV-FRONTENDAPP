@@ -3,6 +3,7 @@ import { ModuleRegistry, AllCommunityModule } from 'ag-grid-community';
 import { AgGridReact } from 'ag-grid-react';
 import { io as socketIOClient } from 'socket.io-client';
 import 'ag-grid-community/styles/ag-theme-alpine.css';
+import * as XLSX from 'xlsx';
 import './PendientesPages.css';
 import { baseColumnDefs, parseFechaPedido, promesaRowClassRules } from './baseDatosColumns';
 import { API_BASE_URL, SOCKET_URL } from './config';
@@ -999,6 +1000,55 @@ const PendientesLocalPage = () => {
     gridRef.current?.api?.clearFocusedCell();
   }, []);
 
+  const handleExportVisibleToExcel = useCallback(() => {
+    const api = gridRef.current?.api;
+    if (!api) {
+      alert('No se pudo acceder a la tabla para exportar.');
+      return;
+    }
+
+    const displayedColumns = api.getAllDisplayedColumns()
+      .filter(column => {
+        const colDef = column.getColDef();
+        const field = colDef.field;
+        return field && field !== SELECTION_FIELD;
+      });
+
+    if (displayedColumns.length === 0) {
+      alert('No hay columnas visibles para exportar.');
+      return;
+    }
+
+    const rows = [];
+    api.forEachNodeAfterFilterAndSort(node => {
+      const row = displayedColumns.map(column => {
+        const rawValue = api.getValue(column, node);
+        if (rawValue === null || typeof rawValue === 'undefined') return '';
+        if (rawValue instanceof Date) return rawValue.toISOString();
+        if (typeof rawValue === 'object') return JSON.stringify(rawValue);
+        return rawValue;
+      });
+      rows.push(row);
+    });
+
+    if (rows.length === 0) {
+      alert('No hay registros para exportar.');
+      return;
+    }
+
+    const headerRow = displayedColumns.map(column => {
+      const colDef = column.getColDef();
+      return colDef.headerName || colDef.field || column.getColId();
+    });
+
+    const worksheet = XLSX.utils.aoa_to_sheet([headerRow, ...rows]);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Pendientes Local');
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const fileName = `pendientes-local-${timestamp}.xlsx`;
+    XLSX.writeFile(workbook, fileName);
+  }, []);
+
   useEffect(() => {
     if (!cellInspector || !cellInspector.editable) {
       inspectorFocusTrackerRef.current = { field: null, rowKey: null };
@@ -1204,6 +1254,23 @@ const PendientesLocalPage = () => {
           style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #d0d5dd', background: '#e0f2fe', cursor: 'pointer', fontWeight: 600 }}
         >
           Copiar selección
+        </button>
+        <button
+          type="button"
+          onClick={handleExportVisibleToExcel}
+          style={{
+            padding: '6px 14px',
+            borderRadius: 8,
+            border: '1px solid #d0d5dd',
+            background: '#fef3c7',
+            cursor: 'pointer',
+            fontWeight: 600,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6
+          }}
+        >
+          Exportar vista
         </button>
         <button
           type="button"
