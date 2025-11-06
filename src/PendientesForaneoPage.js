@@ -1008,10 +1008,29 @@ const PendientesForaneoPage = () => {
       return;
     }
 
-    const allColumns = columnApi?.getAllColumns?.() || [];
-    const exportableColumns = allColumns.filter(column => {
-      if (!column) return false;
-      const colDef = column.getColDef?.() || {};
+    const flattenDefs = (defs) => {
+      const collected = [];
+      defs?.forEach(def => {
+        if (!def) return;
+        if (Array.isArray(def.children) && def.children.length) {
+          collected.push(...flattenDefs(def.children));
+        } else {
+          collected.push(def);
+        }
+      });
+      return collected;
+    };
+
+    const columnInstances = columnApi?.getAllColumns?.() || [];
+    const columnDescriptors = columnInstances.length
+      ? columnInstances.map(column => ({
+          column,
+          colDef: column.getColDef?.() || {}
+        }))
+      : flattenDefs(columnDefs).map(colDef => ({ column: null, colDef }));
+
+    const exportableDescriptors = columnDescriptors.filter(({ colDef }) => {
+      if (!colDef) return false;
       if (colDef.suppressExport) return false;
       if (colDef.field === SELECTION_FIELD) return false;
       if (colDef.checkboxSelection || colDef.headerCheckboxSelection) return false;
@@ -1019,15 +1038,14 @@ const PendientesForaneoPage = () => {
       return true;
     });
 
-    if (exportableColumns.length === 0) {
+    if (!exportableDescriptors.length) {
       alert('No hay columnas disponibles para exportar.');
       return;
     }
 
     const rows = [];
     api.forEachNodeAfterFilterAndSort(node => {
-      const row = exportableColumns.map(column => {
-        const colDef = column.getColDef();
+      const row = exportableDescriptors.map(({ column, colDef }) => {
         let rawValue;
 
         if (typeof colDef.valueGetter === 'function') {
@@ -1048,8 +1066,12 @@ const PendientesForaneoPage = () => {
           }
         } else if (colDef.field) {
           rawValue = node?.data ? node.data[colDef.field] : undefined;
-        } else {
+        } else if (column && typeof column.getColId === 'function') {
           rawValue = node?.data ? node.data[column.getColId()] : undefined;
+        } else if (colDef.colId) {
+          rawValue = node?.data ? node.data[colDef.colId] : undefined;
+        } else {
+          rawValue = undefined;
         }
 
         if (rawValue === null || typeof rawValue === 'undefined') return '';
@@ -1060,15 +1082,19 @@ const PendientesForaneoPage = () => {
       rows.push(row);
     });
 
-    if (rows.length === 0) {
+    if (!rows.length) {
       alert('No hay registros para exportar.');
       return;
     }
 
-    const headerRow = exportableColumns.map(column => {
-      const colDef = column.getColDef();
-      const displayName = columnApi?.getDisplayNameForColumn?.(column, 'header');
-      return displayName || colDef.headerName || colDef.field || column.getColId();
+    const headerRow = exportableDescriptors.map(({ column, colDef }, index) => {
+      const displayName = column && columnApi?.getDisplayNameForColumn?.(column, 'header');
+      if (displayName) return displayName;
+      if (colDef.headerName) return colDef.headerName;
+      if (colDef.field) return colDef.field;
+      if (colDef.colId) return colDef.colId;
+      if (column && typeof column.getColId === 'function') return column.getColId();
+      return `Columna ${index + 1}`;
     });
 
     const worksheet = XLSX.utils.aoa_to_sheet([headerRow, ...rows]);
@@ -1077,7 +1103,7 @@ const PendientesForaneoPage = () => {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const fileName = `pendientes-foraneo-${timestamp}.xlsx`;
     XLSX.writeFile(workbook, fileName);
-  }, []);
+  }, [columnDefs]);
 
   useEffect(() => {
     if (!cellInspector || !cellInspector.editable) {
