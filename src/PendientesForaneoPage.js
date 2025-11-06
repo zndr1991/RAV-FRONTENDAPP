@@ -1024,6 +1024,11 @@ const PendientesForaneoPage = () => {
     });
   }, [cellInspector, baseDataRaw]);
 
+  const inspectorPedidoValue = cellInspector?.rowNode?.data?.PEDIDO;
+  const inspectorPedidoLabel = inspectorPedidoValue == null ? '' : String(inspectorPedidoValue).trim();
+  const inspectorSiniestroValue = cellInspector?.rowNode?.data?.SINIESTRO;
+  const inspectorSiniestroLabel = inspectorSiniestroValue == null ? '' : String(inspectorSiniestroValue).trim();
+
   return (
     <div style={{ padding: '24px' }}>
       <h2 style={{ marginBottom: 16 }}>Pendientes Foráneo</h2>
@@ -1051,7 +1056,10 @@ const PendientesForaneoPage = () => {
             {cellInspector?.field ? (
               <>
                 <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>
-                  {cellInspector.rowId ? `Registro #${cellInspector.rowId}` : 'Sin identificador'}
+                  {inspectorPedidoLabel ? `Pedido ${inspectorPedidoLabel}` : 'Pedido sin valor'}
+                </div>
+                <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+                  {inspectorSiniestroLabel ? `Siniestro ${inspectorSiniestroLabel}` : 'Siniestro sin valor'}
                 </div>
                 <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
                   {cellInspector.editable ? 'Los cambios se guardan al salir del campo o con Ctrl+Enter.' : 'Solo lectura.'}
