@@ -1008,21 +1008,25 @@ const PendientesForaneoPage = () => {
       return;
     }
 
-    const displayedColumns = api.getAllDisplayedColumns()
-      .filter(column => {
-        const colDef = column.getColDef();
-        const field = colDef.field;
-        return field && field !== SELECTION_FIELD;
-      });
+    const allColumns = columnApi?.getAllColumns?.() || [];
+    const exportableColumns = allColumns.filter(column => {
+      if (!column) return false;
+      const colDef = column.getColDef?.() || {};
+      if (colDef.suppressExport) return false;
+      if (colDef.field === SELECTION_FIELD) return false;
+      if (colDef.checkboxSelection || colDef.headerCheckboxSelection) return false;
+      if (!colDef.field && typeof colDef.valueGetter !== 'function') return false;
+      return true;
+    });
 
-    if (displayedColumns.length === 0) {
-      alert('No hay columnas visibles para exportar.');
+    if (exportableColumns.length === 0) {
+      alert('No hay columnas disponibles para exportar.');
       return;
     }
 
     const rows = [];
     api.forEachNodeAfterFilterAndSort(node => {
-      const row = displayedColumns.map(column => {
+      const row = exportableColumns.map(column => {
         const colDef = column.getColDef();
         let rawValue;
 
@@ -1061,9 +1065,10 @@ const PendientesForaneoPage = () => {
       return;
     }
 
-    const headerRow = displayedColumns.map(column => {
+    const headerRow = exportableColumns.map(column => {
       const colDef = column.getColDef();
-      return colDef.headerName || colDef.field || column.getColId();
+      const displayName = columnApi?.getDisplayNameForColumn?.(column, 'header');
+      return displayName || colDef.headerName || colDef.field || column.getColId();
     });
 
     const worksheet = XLSX.utils.aoa_to_sheet([headerRow, ...rows]);
