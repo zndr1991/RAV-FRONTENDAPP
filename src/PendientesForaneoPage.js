@@ -1134,6 +1134,19 @@ const PendientesForaneoPage = () => {
   const inspectorPedidoLabel = inspectorPedidoValue == null ? '' : String(inspectorPedidoValue).trim();
   const inspectorSiniestroValue = cellInspector?.rowNode?.data?.SINIESTRO;
   const inspectorSiniestroLabel = inspectorSiniestroValue == null ? '' : String(inspectorSiniestroValue).trim();
+  const inspectorModeloValue = cellInspector?.rowNode?.data?.MODELO;
+  const inspectorAnioValue = cellInspector?.rowNode?.data?.ANIO;
+  const inspectorModeloAnioLabel = [inspectorModeloValue, inspectorAnioValue]
+    .map((val) => (val == null ? '' : String(val).trim()))
+    .filter(Boolean)
+    .join(' ');
+  const inspectorTallerValue = cellInspector?.rowNode?.data?.NOMBRE_COMERCIAL_TALLER;
+  const inspectorTallerLabel = inspectorTallerValue == null ? '' : String(inspectorTallerValue).trim();
+  const inspectorOrigenValue = cellInspector?.rowNode?.data?.ORIGEN;
+  const inspectorOrigenLabel = inspectorOrigenValue == null ? '' : String(inspectorOrigenValue).trim();
+  const inspectorTextareaClassName = cellInspector?.isCommitting
+    ? 'inspector-textarea inspector-textarea--saving'
+    : 'inspector-textarea';
 
   return (
     <div style={{ padding: '24px' }}>
@@ -1145,34 +1158,51 @@ const PendientesForaneoPage = () => {
         style={{
           background: '#f8fafc',
           border: '1px solid #d1d5db',
-          borderRadius: 12,
-          padding: 16,
+          borderRadius: 10,
+          padding: 12,
           marginBottom: 12,
-          boxShadow: '0 4px 12px rgba(15, 23, 42, 0.06)',
+          boxShadow: '0 3px 10px rgba(15, 23, 42, 0.05)',
           display: 'flex',
           flexDirection: 'column',
-          gap: 12
+          gap: 10
         }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            gap: 10,
+            flexWrap: 'wrap'
+          }}
+        >
           <div>
-            <div style={{ fontWeight: 600, fontSize: 15, color: '#111827' }}>
+            <div style={{ fontWeight: 600, fontSize: 14, color: '#111827' }}>
               {cellInspector?.field ? cellInspector.header : 'Inspector de celda'}
             </div>
             {cellInspector?.field ? (
               <>
-                <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>
+                <div style={{ fontSize: 11.5, color: '#6b7280', marginTop: 4 }}>
                   {inspectorPedidoLabel ? `Pedido ${inspectorPedidoLabel}` : 'Pedido sin valor'}
                 </div>
-                <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+                <div style={{ fontSize: 11.5, color: '#6b7280', marginTop: 2 }}>
                   {inspectorSiniestroLabel ? `Siniestro ${inspectorSiniestroLabel}` : 'Siniestro sin valor'}
                 </div>
-                <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+                <div style={{ fontSize: 11.5, color: '#6b7280', marginTop: 2 }}>
+                  {inspectorModeloAnioLabel ? `Modelo ${inspectorModeloAnioLabel}` : 'Modelo sin valor'}
+                </div>
+                <div style={{ fontSize: 11.5, color: '#6b7280', marginTop: 2 }}>
+                  {inspectorTallerLabel ? `Taller ${inspectorTallerLabel}` : 'Taller sin valor'}
+                </div>
+                <div style={{ fontSize: 11.5, color: '#6b7280', marginTop: 2 }}>
+                  {inspectorOrigenLabel ? `Origen ${inspectorOrigenLabel}` : 'Origen sin valor'}
+                </div>
+                <div style={{ fontSize: 11.5, color: '#6b7280', marginTop: 2 }}>
                   {cellInspector.editable ? 'Los cambios se guardan al salir del campo o con Ctrl+Enter.' : 'Solo lectura.'}
                 </div>
               </>
             ) : (
-              <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>
+              <div style={{ fontSize: 11.5, color: '#6b7280', marginTop: 4 }}>
                 Selecciona una celda para ver su contenido.
               </div>
             )}
@@ -1182,8 +1212,8 @@ const PendientesForaneoPage = () => {
             onClick={handleInspectorCancel}
             disabled={!cellInspector}
             style={{
-              padding: '6px 14px',
-              borderRadius: 8,
+              padding: '4px 12px',
+              borderRadius: 6,
               border: '1px solid #d0d5dd',
               background: cellInspector ? '#f9fafb' : '#f3f4f6',
               cursor: cellInspector ? 'pointer' : 'not-allowed',
@@ -1198,6 +1228,7 @@ const PendientesForaneoPage = () => {
         {cellInspector ? (
           cellInspector.editable ? (
             <textarea
+              className={inspectorTextareaClassName}
               ref={inspectorInputRef}
               value={cellInspector.value}
               onChange={handleInspectorChange}
@@ -1205,26 +1236,17 @@ const PendientesForaneoPage = () => {
               onKeyDown={handleInspectorKeyDown}
               rows={3}
               placeholder="Escribe el valor..."
-              style={{
-                width: '100%',
-                padding: 10,
-                borderRadius: 10,
-                border: '1px solid #cbd5e1',
-                resize: 'vertical',
-                fontSize: 12.5,
-                minHeight: 72,
-                background: '#ffffff'
-              }}
+              style={{ minHeight: 58 }}
             />
           ) : (
             <div
               style={{
-                minHeight: 72,
-                borderRadius: 10,
-                border: '1px solid #dbeafe',
+                minHeight: 58,
+                borderRadius: 8,
+                border: '1px solid #d8e2f3',
                 background: '#ffffff',
-                padding: 12,
-                fontSize: 12.5,
+                padding: 10,
+                fontSize: 12,
                 whiteSpace: 'pre-wrap',
                 wordBreak: 'break-word',
                 color: '#111827'
@@ -1236,12 +1258,12 @@ const PendientesForaneoPage = () => {
         ) : (
           <div
             style={{
-              minHeight: 68,
-              borderRadius: 10,
+              minHeight: 54,
+              borderRadius: 8,
               border: '1px dashed #d1d5db',
               background: '#ffffff',
-              padding: 12,
-              fontSize: 12.5,
+              padding: 10,
+              fontSize: 12,
               color: '#6b7280'
             }}
           >
@@ -1259,8 +1281,8 @@ const PendientesForaneoPage = () => {
               }}
               disabled={cellInspector.isCommitting}
               style={{
-                padding: '6px 14px',
-                borderRadius: 8,
+                padding: '5px 12px',
+                borderRadius: 6,
                 border: 'none',
                 background: cellInspector.isCommitting ? '#bfdbfe' : '#3b82f6',
                 color: '#fff',

@@ -110,6 +110,7 @@ const BaseDatosPage = () => {
   const suppressHistoryRef = useRef(false);
   const [nuevoEstatusExcelData, setNuevoEstatusExcelData] = useState([]);
   const [nuevoEstatusPuedeCargar, setNuevoEstatusPuedeCargar] = useState(false);
+  const [nuevoEstatusIsUploading, setNuevoEstatusIsUploading] = useState(false);
   const [showColumnListPrincipal, setShowColumnListPrincipal] = useState(false);
   const [showColumnListNuevo, setShowColumnListNuevo] = useState(false);
   const [isAssigningLocalidades, setIsAssigningLocalidades] = useState(false);
@@ -1373,6 +1374,20 @@ const BaseDatosPage = () => {
   const inspectorIsEditable = inspectorField
     ? canEditField(inspectorField) && !inspectorState?.isCommitting
     : false;
+  const inspectorPedidoValue = inspectorRowData?.PEDIDO;
+  const inspectorPedidoLabel = inspectorPedidoValue == null ? '' : String(inspectorPedidoValue).trim();
+  const inspectorSiniestroValue = inspectorRowData?.SINIESTRO;
+  const inspectorSiniestroLabel = inspectorSiniestroValue == null ? '' : String(inspectorSiniestroValue).trim();
+  const inspectorModeloValue = inspectorRowData?.MODELO;
+  const inspectorAnioValue = inspectorRowData?.ANIO;
+  const inspectorModeloAnioLabel = [inspectorModeloValue, inspectorAnioValue]
+    .map(val => (val == null ? '' : String(val).trim()))
+    .filter(Boolean)
+    .join(' ');
+  const inspectorTallerValue = inspectorRowData?.NOMBRE_COMERCIAL_TALLER;
+  const inspectorTallerLabel = inspectorTallerValue == null ? '' : String(inspectorTallerValue).trim();
+  const inspectorOrigenValue = inspectorRowData?.ORIGEN;
+  const inspectorOrigenLabel = inspectorOrigenValue == null ? '' : String(inspectorOrigenValue).trim();
 
   useEffect(() => {
     if (!cellEditorDialog || !inspectorIsEditable) return;
@@ -1540,6 +1555,7 @@ const BaseDatosPage = () => {
   const handleCargarNuevoEstatusExcel = async () => {
     if (!puedeGestionarNuevoEstatus) return;
     if (!nuevoEstatusExcelData.length) return;
+    setNuevoEstatusIsUploading(true);
     try {
       const res = await fetch(`${API_BASE_URL}/api/nuevo-estatus/insertar`, {
         method: 'POST',
@@ -1562,6 +1578,8 @@ const BaseDatosPage = () => {
       }
     } catch (err) {
       alert('Error de conexión al cargar información');
+    } finally {
+      setNuevoEstatusIsUploading(false);
     }
   };
 
@@ -1756,6 +1774,21 @@ const BaseDatosPage = () => {
                   <>
                     <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>
                       {inspectorRowId ? `Registro #${inspectorRowId}` : 'Sin identificador'}
+                    </div>
+                    <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+                      {inspectorPedidoLabel ? `Pedido ${inspectorPedidoLabel}` : 'Pedido sin valor'}
+                    </div>
+                    <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+                      {inspectorSiniestroLabel ? `Siniestro ${inspectorSiniestroLabel}` : 'Siniestro sin valor'}
+                    </div>
+                    <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+                      {inspectorModeloAnioLabel ? `Modelo ${inspectorModeloAnioLabel}` : 'Modelo sin valor'}
+                    </div>
+                    <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+                      {inspectorTallerLabel ? `Taller ${inspectorTallerLabel}` : 'Taller sin valor'}
+                    </div>
+                    <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+                      {inspectorOrigenLabel ? `Origen ${inspectorOrigenLabel}` : 'Origen sin valor'}
                     </div>
                     <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
                       {inspectorIsEditable ? 'Los cambios se guardan al terminar la edición.' : 'Solo lectura.'}
@@ -2105,14 +2138,27 @@ const BaseDatosPage = () => {
               </button>
               <button
                 onClick={handleCargarNuevoEstatusExcel}
-                disabled={!nuevoEstatusPuedeCargar}
-                style={{ padding: '6px 14px', borderRadius: 8, border: 'none', background: nuevoEstatusPuedeCargar ? '#2563eb' : '#93c5fd', color: '#fff', fontWeight: 600, cursor: nuevoEstatusPuedeCargar ? 'pointer' : 'not-allowed' }}
+                disabled={!nuevoEstatusPuedeCargar || nuevoEstatusIsUploading}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: 8,
+                  border: 'none',
+                  background: nuevoEstatusPuedeCargar && !nuevoEstatusIsUploading ? '#2563eb' : '#93c5fd',
+                  color: '#fff',
+                  fontWeight: 600,
+                  cursor: nuevoEstatusPuedeCargar && !nuevoEstatusIsUploading ? 'pointer' : 'not-allowed'
+                }}
               >
-                Cargar información
+                {nuevoEstatusIsUploading ? 'Cargando...' : 'Cargar información'}
               </button>
               {nuevoEstatusExcelData.length > 0 && (
                 <span style={{ color: '#0f766e', fontWeight: 600 }}>
                   {nuevoEstatusExcelData.length} filas listas para cargar
+                </span>
+              )}
+              {nuevoEstatusIsUploading && (
+                <span style={{ color: '#2563eb', fontWeight: 600 }} role="status">
+                  Cargando información, por favor espera...
                 </span>
               )}
             </div>

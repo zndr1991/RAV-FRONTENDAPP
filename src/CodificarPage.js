@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect, useMemo } from 'react';
+import React, { useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import { io as socketIOClient } from 'socket.io-client';
 import { ModuleRegistry, AllCommunityModule } from 'ag-grid-community';
 import { AgGridReact } from 'ag-grid-react';
@@ -170,6 +170,7 @@ const CodificarPage = () => {
   const [selectedCount, setSelectedCount] = useState(0);
   const [editTooltip, setEditTooltip] = useState({ show: false, x: 0, y: 0, value: "" });
   const gridRef = useRef();
+  const [inspectorCell, setInspectorCell] = useState(null);
 
   // NUEVO: Estado para controlar si se puede cargar información
   const [puedeCargar, setPuedeCargar] = useState(false);
@@ -325,6 +326,12 @@ const CodificarPage = () => {
 
   useEffect(() => {
     localStorage.setItem('activeTab', activeTab);
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== 'principal') {
+      setInspectorCell(null);
+    }
   }, [activeTab]);
 
   // CRUCE AUTOMÁTICO DE LOCALIDADES
@@ -510,6 +517,106 @@ const CodificarPage = () => {
     });
     return duplicados;
   }, [rowData]);
+
+  const inspectorRowData = useMemo(() => {
+    if (!inspectorCell) return null;
+    const { rowId, rowKey, snapshot } = inspectorCell;
+    if (rowId != null) {
+      const matchById = rowData.find(row => row && row.id === rowId);
+      if (matchById) return matchById;
+    }
+    if (rowKey) {
+      const matchByKey = rowData.find(row => buildPedidoItemKey(row?.PEDIDO, row?.ITEM) === rowKey);
+      if (matchByKey) return matchByKey;
+    }
+    return snapshot || null;
+  }, [inspectorCell, rowData]);
+
+  const inspectorField = inspectorCell?.field ?? null;
+  const inspectorHeader = inspectorCell?.header ?? 'Inspector de celdas';
+  const inspectorColumn = inspectorField ? columnDefs.find(col => col.field === inspectorField) : null;
+  const inspectorIsEditable = Boolean(inspectorColumn?.editable);
+  const inspectorRowId = inspectorRowData?.id ?? inspectorCell?.rowId ?? null;
+  const inspectorPedidoLabel = inspectorRowData && inspectorRowData.PEDIDO != null
+    ? String(inspectorRowData.PEDIDO).trim()
+    : '';
+  const inspectorSiniestroLabel = inspectorRowData && inspectorRowData.SINIESTRO != null
+    ? String(inspectorRowData.SINIESTRO).trim()
+    : '';
+  const inspectorModeloAnioLabel = [inspectorRowData?.MODELO, inspectorRowData?.ANIO]
+    .map(val => (val == null ? '' : String(val).trim()))
+    .filter(Boolean)
+    .join(' ');
+  const inspectorTallerLabel = inspectorRowData && inspectorRowData.NOMBRE_COMERCIAL_TALLER != null
+    ? String(inspectorRowData.NOMBRE_COMERCIAL_TALLER).trim()
+    : '';
+  const inspectorOrigenLabel = inspectorRowData && inspectorRowData.ORIGEN != null
+    ? String(inspectorRowData.ORIGEN).trim()
+    : '';
+  const inspectorValueRaw = inspectorField
+    ? (inspectorRowData?.[inspectorField] ?? inspectorCell?.snapshot?.[inspectorField] ?? '')
+    : '';
+  const inspectorValueDisplay = inspectorValueRaw == null ? '' : String(inspectorValueRaw);
+  const inspectorInstruction = inspectorCell
+    ? (inspectorIsEditable
+      ? 'Edita esta columna directamente en la tabla.'
+      : 'Solo lectura.')
+    : 'Selecciona una celda para ver su contenido.';
+
+  const updateInspectorFromData = useCallback((field, header, data) => {
+    if (!field || field === 'checked' || !data) {
+      setInspectorCell(null);
+      return;
+    }
+    const resolvedHeader = header || field;
+    const rowId = data.id ?? null;
+    const rowKey = buildPedidoItemKey(data.PEDIDO, data.ITEM);
+    setInspectorCell({
+      field,
+      header: resolvedHeader,
+      rowId,
+      rowKey,
+      snapshot: data
+    });
+  }, [setInspectorCell]);
+
+  const handleCellClicked = useCallback((params) => {
+    const field = params?.colDef?.field;
+    const header = params?.colDef?.headerName;
+    const data = params?.data || null;
+    updateInspectorFromData(field, header, data);
+  }, [updateInspectorFromData]);
+
+  const handleCellFocused = useCallback((params) => {
+    const column = params?.column;
+    if (!column) {
+      setInspectorCell(null);
+      return;
+    }
+    const colDef = column.getColDef?.() || {};
+    const field = colDef.field;
+    if (!field || field === 'checked') {
+      setInspectorCell(null);
+      return;
+    }
+    const rowIndex = params?.rowIndex;
+    if (typeof rowIndex !== 'number' || rowIndex < 0) {
+      setInspectorCell(null);
+      return;
+    }
+    const node = params.api?.getDisplayedRowAtIndex(rowIndex);
+    const data = node?.data || null;
+    updateInspectorFromData(field, colDef.headerName, data);
+  }, [updateInspectorFromData, setInspectorCell]);
+
+  const handleInspectorClear = useCallback(() => {
+    setInspectorCell(null);
+    const api = gridRef.current?.api;
+    if (api) {
+      api.clearFocusedCell();
+      api.deselectAll();
+    }
+  }, [setInspectorCell]);
 
   const handleEnviarSeleccionados = async () => {
     if (!gridRef.current) return;
@@ -944,6 +1051,85 @@ ITEM: ${params.data.ITEM || ""}`
               </button>
             </div>
 
+            <div className="section-card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 15, color: '#111827' }}>
+                    {inspectorHeader}
+                  </div>
+                  {inspectorCell ? (
+                    <>
+                      <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>
+                        {inspectorRowId ? `Registro #${inspectorRowId}` : 'Sin identificador'}
+                      </div>
+                      <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+                        {inspectorPedidoLabel ? `Pedido ${inspectorPedidoLabel}` : 'Pedido sin valor'}
+                      </div>
+                      <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+                        {inspectorSiniestroLabel ? `Siniestro ${inspectorSiniestroLabel}` : 'Siniestro sin valor'}
+                      </div>
+                      <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+                        {inspectorModeloAnioLabel ? `Modelo ${inspectorModeloAnioLabel}` : 'Modelo sin valor'}
+                      </div>
+                      <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+                        {inspectorTallerLabel ? `Taller ${inspectorTallerLabel}` : 'Taller sin valor'}
+                      </div>
+                      <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+                        {inspectorOrigenLabel ? `Origen ${inspectorOrigenLabel}` : 'Origen sin valor'}
+                      </div>
+                      <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+                        {inspectorInstruction}
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>
+                      Selecciona una celda para ver su contenido.
+                    </div>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={handleInspectorClear}
+                  disabled={!inspectorCell}
+                  style={{ alignSelf: 'flex-start' }}
+                >
+                  Limpiar selección
+                </button>
+              </div>
+              {inspectorCell ? (
+                <div
+                  style={{
+                    minHeight: 58,
+                    borderRadius: 10,
+                    border: '1px solid #d1d5db',
+                    background: '#ffffff',
+                    padding: 12,
+                    fontSize: 12,
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    color: '#111827'
+                  }}
+                >
+                  {inspectorValueDisplay || '(vacío)'}
+                </div>
+              ) : (
+                <div
+                  style={{
+                    minHeight: 58,
+                    borderRadius: 10,
+                    border: '1px dashed #d1d5db',
+                    background: '#ffffff',
+                    padding: 12,
+                    fontSize: 12,
+                    color: '#6b7280'
+                  }}
+                >
+                  No hay una celda seleccionada.
+                </div>
+              )}
+            </div>
+
             {showColumnPanel && (
               <div className="section-card column-panel">
                 <strong>Mostrar/Ocultar columnas:</strong>
@@ -1049,6 +1235,8 @@ ITEM: ${params.data.ITEM || ""}`
                   onCellValueChanged={handleCellValueChanged}
                   onCellEditingStarted={handleCellEditingStarted}
                   onCellEditingStopped={handleCellEditingStopped}
+                  onCellClicked={handleCellClicked}
+                  onCellFocused={handleCellFocused}
                   getRowClass={getRowClass}
                   stopEditingWhenCellsLoseFocus={true}
                   enterMovesDownAfterEdit={false}
