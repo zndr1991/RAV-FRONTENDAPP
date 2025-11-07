@@ -175,12 +175,37 @@ const CodificarPage = () => {
   // NUEVO: Estado para controlar si se puede cargar información
   const [puedeCargar, setPuedeCargar] = useState(false);
   const [mostrarResumen, setMostrarResumen] = useState(false);
+  const undoStackRef = useRef([]);
+  const isApplyingUndoRef = useRef(false);
+  const [canUndo, setCanUndo] = useState(false);
 
   const handleCellValueChanged = params => {
     const { data, newValue, colDef, node, api } = params;
     const field = colDef.field;
+    if (!field) return;
     const nuevoCompaq =
       field === "CODIGO" && newValue && newValue.trim() !== "" ? "GENERAR" : "";
+
+    const normalizeValue = (raw) => {
+      if (raw === null || typeof raw === 'undefined') return '';
+      return typeof raw === 'string' ? raw : String(raw);
+    };
+
+    const previousValue = normalizeValue(params.oldValue);
+    const appliedNewValue = normalizeValue(newValue);
+
+    if (!isApplyingUndoRef.current && field && data?.id != null && previousValue !== appliedNewValue) {
+      undoStackRef.current.push({
+        id: data.id,
+        field,
+        previousValue,
+        newValue: appliedNewValue
+      });
+      while (undoStackRef.current.length > 25) {
+        undoStackRef.current.shift();
+      }
+      setCanUndo(true);
+    }
 
     setRowData(prev =>
       prev.map(row =>
@@ -193,10 +218,19 @@ const CodificarPage = () => {
           : row
       )
     );
-  // Keep the edited record roughly in place instead of snapping the row to the top.
-  api.ensureIndexVisible(node.rowIndex, 'middle');
 
-  fetch(`${API_BASE_URL}/api/excel/actualizar-celda`, {
+    // Solo desplaza la tabla si la fila salió de la vista; evita brincos al guardar.
+  const firstDisplayedIndex = api.getFirstDisplayedRowIndex?.();
+  const lastDisplayedIndex = api.getLastDisplayedRowIndex?.();
+    if (
+      firstDisplayedIndex != null &&
+      lastDisplayedIndex != null &&
+      (node.rowIndex < firstDisplayedIndex || node.rowIndex > lastDisplayedIndex)
+    ) {
+      api.ensureIndexVisible(node.rowIndex, 'middle');
+    }
+
+    fetch(`${API_BASE_URL}/api/excel/actualizar-celda`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -207,7 +241,7 @@ const CodificarPage = () => {
     });
 
     if (field === "CODIGO") {
-  fetch(`${API_BASE_URL}/api/excel/actualizar-celda`, {
+      fetch(`${API_BASE_URL}/api/excel/actualizar-celda`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -216,6 +250,12 @@ const CodificarPage = () => {
           value: nuevoCompaq
         })
       });
+    }
+
+    if (isApplyingUndoRef.current) {
+      setTimeout(() => {
+        isApplyingUndoRef.current = false;
+      }, 0);
     }
   };
 
@@ -723,6 +763,58 @@ const CodificarPage = () => {
     }
   };
 
+  const handleUndo = useCallback(() => {
+    const stack = undoStackRef.current;
+    if (!stack.length) return;
+
+    const entry = stack.pop();
+    setCanUndo(stack.length > 0);
+
+    if (!entry || entry.id == null || !entry.field) return;
+
+    const api = gridRef.current?.api;
+    if (!api) {
+      stack.push(entry);
+      setCanUndo(true);
+      return;
+    }
+
+    let targetNode = api.getRowNode(String(entry.id));
+    if (!targetNode) {
+      api.forEachNode(node => {
+        if (!targetNode && String(node.data?.id) === String(entry.id)) {
+          targetNode = node;
+        }
+      });
+    }
+
+    if (!targetNode) {
+      stack.push(entry);
+      setCanUndo(true);
+      return;
+    }
+
+    isApplyingUndoRef.current = true;
+    targetNode.setDataValue(entry.field, entry.previousValue ?? '');
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      if (event.key !== 'z' && event.key !== 'Z') return;
+      const target = event.target;
+      const tagName = (target?.tagName || '').toLowerCase();
+      if (tagName === 'input' || tagName === 'textarea' || target?.isContentEditable) return;
+      event.preventDefault();
+      if (canUndo) {
+        handleUndo();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleUndo, canUndo]);
+
   const getRowClass = params => {
     const data = params.data || {};
     const clave = buildSiniestroItemKey(extractSiniestro(data), extractItem(data));
@@ -1059,23 +1151,49 @@ ITEM: ${params.data.ITEM || ""}`
                   </div>
                   {inspectorCell ? (
                     <>
-                      <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>
-                        {inspectorRowId ? `Registro #${inspectorRowId}` : 'Sin identificador'}
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexWrap: 'wrap',
+                          columnGap: 16,
+                          rowGap: 4,
+                          fontSize: 12,
+                          color: '#6b7280',
+                          marginTop: 4
+                        }}
+                      >
+                        <span>
+                          <span style={{ fontWeight: 600, color: '#374151' }}>Taller:</span>{' '}
+                          {inspectorTallerLabel || 'Sin valor'}
+                        </span>
+                        <span>
+                          <span style={{ fontWeight: 600, color: '#374151' }}>Modelo:</span>{' '}
+                          {inspectorModeloAnioLabel || 'Sin valor'}
+                        </span>
                       </div>
-                      <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
-                        {inspectorPedidoLabel ? `Pedido ${inspectorPedidoLabel}` : 'Pedido sin valor'}
-                      </div>
-                      <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
-                        {inspectorSiniestroLabel ? `Siniestro ${inspectorSiniestroLabel}` : 'Siniestro sin valor'}
-                      </div>
-                      <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
-                        {inspectorModeloAnioLabel ? `Modelo ${inspectorModeloAnioLabel}` : 'Modelo sin valor'}
-                      </div>
-                      <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
-                        {inspectorTallerLabel ? `Taller ${inspectorTallerLabel}` : 'Taller sin valor'}
-                      </div>
-                      <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
-                        {inspectorOrigenLabel ? `Origen ${inspectorOrigenLabel}` : 'Origen sin valor'}
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexWrap: 'wrap',
+                          columnGap: 16,
+                          rowGap: 4,
+                          fontSize: 12,
+                          color: '#6b7280',
+                          marginTop: 2
+                        }}
+                      >
+                        <span>
+                          <span style={{ fontWeight: 600, color: '#374151' }}>Pedido:</span>{' '}
+                          {inspectorPedidoLabel || 'Sin valor'}
+                        </span>
+                        <span>
+                          <span style={{ fontWeight: 600, color: '#374151' }}>Siniestro:</span>{' '}
+                          {inspectorSiniestroLabel || 'Sin valor'}
+                        </span>
+                        <span>
+                          <span style={{ fontWeight: 600, color: '#374151' }}>Origen:</span>{' '}
+                          {inspectorOrigenLabel || 'Sin valor'}
+                        </span>
                       </div>
                       <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
                         {inspectorInstruction}
@@ -1184,6 +1302,14 @@ ITEM: ${params.data.ITEM || ""}`
                   onClick={handleSave}
                 >
                   Guardar información
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={handleUndo}
+                  disabled={!canUndo}
+                >
+                  Deshacer cambio
                 </button>
                 {esSupervisor && (
                   <button

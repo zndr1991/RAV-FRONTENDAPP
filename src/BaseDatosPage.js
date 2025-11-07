@@ -1052,6 +1052,23 @@ const BaseDatosPage = () => {
     setCanUndo(stack.length > 0);
   }, []);
 
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      if (event.key !== 'z' && event.key !== 'Z') return;
+      const tagName = (event.target?.tagName || '').toLowerCase();
+      const isEditableField = tagName === 'input' || tagName === 'textarea' || event.target?.isContentEditable;
+      if (isEditableField) return;
+      event.preventDefault();
+      if (canUndo) {
+        handleUndo();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleUndo, canUndo]);
+
   const handleExportPrincipalToExcel = useCallback(() => {
     const api = gridRef.current?.api;
     const columnApi = gridRef.current?.columnApi;
@@ -1772,23 +1789,49 @@ const BaseDatosPage = () => {
                 </div>
                 {inspectorField ? (
                   <>
-                    <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>
-                      {inspectorRowId ? `Registro #${inspectorRowId}` : 'Sin identificador'}
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        columnGap: 16,
+                        rowGap: 4,
+                        fontSize: 12,
+                        color: '#6b7280',
+                        marginTop: 4
+                      }}
+                    >
+                      <span>
+                        <span style={{ fontWeight: 600, color: '#374151' }}>Taller:</span>{' '}
+                        {inspectorTallerLabel || 'Sin valor'}
+                      </span>
+                      <span>
+                        <span style={{ fontWeight: 600, color: '#374151' }}>Modelo:</span>{' '}
+                        {inspectorModeloAnioLabel || 'Sin valor'}
+                      </span>
                     </div>
-                    <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
-                      {inspectorPedidoLabel ? `Pedido ${inspectorPedidoLabel}` : 'Pedido sin valor'}
-                    </div>
-                    <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
-                      {inspectorSiniestroLabel ? `Siniestro ${inspectorSiniestroLabel}` : 'Siniestro sin valor'}
-                    </div>
-                    <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
-                      {inspectorModeloAnioLabel ? `Modelo ${inspectorModeloAnioLabel}` : 'Modelo sin valor'}
-                    </div>
-                    <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
-                      {inspectorTallerLabel ? `Taller ${inspectorTallerLabel}` : 'Taller sin valor'}
-                    </div>
-                    <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
-                      {inspectorOrigenLabel ? `Origen ${inspectorOrigenLabel}` : 'Origen sin valor'}
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        columnGap: 16,
+                        rowGap: 4,
+                        fontSize: 12,
+                        color: '#6b7280',
+                        marginTop: 2
+                      }}
+                    >
+                      <span>
+                        <span style={{ fontWeight: 600, color: '#374151' }}>Pedido:</span>{' '}
+                        {inspectorPedidoLabel || 'Sin valor'}
+                      </span>
+                      <span>
+                        <span style={{ fontWeight: 600, color: '#374151' }}>Siniestro:</span>{' '}
+                        {inspectorSiniestroLabel || 'Sin valor'}
+                      </span>
+                      <span>
+                        <span style={{ fontWeight: 600, color: '#374151' }}>Origen:</span>{' '}
+                        {inspectorOrigenLabel || 'Sin valor'}
+                      </span>
                     </div>
                     <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
                       {inspectorIsEditable ? 'Los cambios se guardan al terminar la edición.' : 'Solo lectura.'}

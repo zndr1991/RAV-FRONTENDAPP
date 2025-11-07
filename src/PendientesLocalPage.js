@@ -990,6 +990,24 @@ const PendientesLocalPage = () => {
     setCanUndo(stack.length > 0);
   }, []);
 
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      if (event.key !== 'z' && event.key !== 'Z') return;
+      const target = event.target;
+      const tagName = (target?.tagName || '').toLowerCase();
+      const isEditableField = tagName === 'input' || tagName === 'textarea' || target?.isContentEditable;
+      if (isEditableField) return;
+      event.preventDefault();
+      if (canUndo) {
+        handleUndo();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleUndo, canUndo]);
+
   const handleInspectorCancel = useCallback(() => {
     inspectorSuppressCommitRef.current = true;
     setTimeout(() => {
@@ -1182,20 +1200,49 @@ const PendientesLocalPage = () => {
             </div>
             {cellInspector?.field ? (
               <>
-                <div style={{ fontSize: 11.5, color: '#6b7280', marginTop: 4 }}>
-                  {inspectorPedidoLabel ? `Pedido ${inspectorPedidoLabel}` : 'Pedido sin valor'}
+                <div
+                  style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    columnGap: 14,
+                    rowGap: 4,
+                    fontSize: 11.5,
+                    color: '#6b7280',
+                    marginTop: 4
+                  }}
+                >
+                  <span>
+                    <span style={{ fontWeight: 600, color: '#374151' }}>Taller:</span>{' '}
+                    {inspectorTallerLabel || 'Sin valor'}
+                  </span>
+                  <span>
+                    <span style={{ fontWeight: 600, color: '#374151' }}>Modelo:</span>{' '}
+                    {inspectorModeloAnioLabel || 'Sin valor'}
+                  </span>
                 </div>
-                <div style={{ fontSize: 11.5, color: '#6b7280', marginTop: 2 }}>
-                  {inspectorSiniestroLabel ? `Siniestro ${inspectorSiniestroLabel}` : 'Siniestro sin valor'}
-                </div>
-                <div style={{ fontSize: 11.5, color: '#6b7280', marginTop: 2 }}>
-                  {inspectorModeloAnioLabel ? `Modelo ${inspectorModeloAnioLabel}` : 'Modelo sin valor'}
-                </div>
-                <div style={{ fontSize: 11.5, color: '#6b7280', marginTop: 2 }}>
-                  {inspectorTallerLabel ? `Taller ${inspectorTallerLabel}` : 'Taller sin valor'}
-                </div>
-                <div style={{ fontSize: 11.5, color: '#6b7280', marginTop: 2 }}>
-                  {inspectorOrigenLabel ? `Origen ${inspectorOrigenLabel}` : 'Origen sin valor'}
+                <div
+                  style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    columnGap: 14,
+                    rowGap: 4,
+                    fontSize: 11.5,
+                    color: '#6b7280',
+                    marginTop: 2
+                  }}
+                >
+                  <span>
+                    <span style={{ fontWeight: 600, color: '#374151' }}>Pedido:</span>{' '}
+                    {inspectorPedidoLabel || 'Sin valor'}
+                  </span>
+                  <span>
+                    <span style={{ fontWeight: 600, color: '#374151' }}>Siniestro:</span>{' '}
+                    {inspectorSiniestroLabel || 'Sin valor'}
+                  </span>
+                  <span>
+                    <span style={{ fontWeight: 600, color: '#374151' }}>Origen:</span>{' '}
+                    {inspectorOrigenLabel || 'Sin valor'}
+                  </span>
                 </div>
                 <div style={{ fontSize: 11.5, color: '#6b7280', marginTop: 2 }}>
                   {cellInspector.editable ? 'Los cambios se guardan al salir del campo o con Ctrl+Enter.' : 'Solo lectura.'}
