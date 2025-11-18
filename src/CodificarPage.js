@@ -576,7 +576,6 @@ const CodificarPage = () => {
   const inspectorHeader = inspectorCell?.header ?? 'Inspector de celdas';
   const inspectorColumn = inspectorField ? columnDefs.find(col => col.field === inspectorField) : null;
   const inspectorIsEditable = Boolean(inspectorColumn?.editable);
-  const inspectorRowId = inspectorRowData?.id ?? inspectorCell?.rowId ?? null;
   const inspectorPedidoLabel = inspectorRowData && inspectorRowData.PEDIDO != null
     ? String(inspectorRowData.PEDIDO).trim()
     : '';

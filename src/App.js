@@ -8,6 +8,8 @@ import CrearUsuarioPage from './CrearUsuarioPage';
 import CapturaPage from './CapturaPage';
 import PendientesForaneoPage from './PendientesForaneoPage';
 import PendientesLocalPage from './PendientesLocalPage';
+import FacturacionPage from './FacturacionPage';
+import CancelacionesPage from './CancelacionesPage';
 import './App.css';
 
 function Menu({ usuario, onCerrarSesion }) {
@@ -49,6 +51,16 @@ function Menu({ usuario, onCerrarSesion }) {
         {(esSupervisor || esSeguimientos) && (
           <NavLink to="/pendientes-local" className={navLinkClass()}>
             Pendientes Local
+          </NavLink>
+        )}
+        {(esSupervisor || esSeguimientos) && (
+          <NavLink to="/facturacion" className={navLinkClass()}>
+            Facturacion
+          </NavLink>
+        )}
+        {(esSupervisor || esSeguimientos) && (
+          <NavLink to="/cancelaciones" className={navLinkClass()}>
+            Cancelaciones
           </NavLink>
         )}
         {(esSupervisor || esCaptura) && (
@@ -112,6 +124,12 @@ function App() {
                 )}
                 {(esSupervisor || esSeguimientos) && (
                   <Route path="/pendientes-local" element={<PendientesLocalPage />} />
+                )}
+                {(esSupervisor || esSeguimientos) && (
+                  <Route path="/facturacion" element={<FacturacionPage />} />
+                )}
+                {(esSupervisor || esSeguimientos) && (
+                  <Route path="/cancelaciones" element={<CancelacionesPage />} />
                 )}
                 {esSupervisor && (
                   <Route path="/usuarios" element={<UsuariosPage />} />

@@ -72,7 +72,30 @@ const applyTextFilter = (rows, text, mode) => {
   });
 };
 
-const PendientesLocalPage = () => {
+export const defaultSortRows = (rows) => {
+  if (!Array.isArray(rows)) return [];
+  return [...rows].sort((a, b) => parseFechaPedido(b?.FECHA_PEDIDO) - parseFechaPedido(a?.FECHA_PEDIDO));
+};
+
+const filterLocalRows = (rows) => {
+  if (!Array.isArray(rows)) return [];
+  const filtered = rows.filter(row => normalizeLocalidad(row?.LOCALIDAD) === 'local');
+  return defaultSortRows(filtered);
+};
+
+const PendientesPage = ({
+  pageTitle = 'Pendientes',
+  pageSubtitle = '',
+  filterBaseRows = defaultSortRows,
+  exportFilePrefix = 'pendientes',
+  exportSheetName,
+  columnVisibilityStorageKey,
+} = {}) => {
+  const pageTitleText = pageTitle || 'Pendientes';
+  const pageSubtitleText = pageSubtitle || '';
+  const resolvedSheetName = exportSheetName || pageTitleText;
+  const filterFn = useMemo(() => (typeof filterBaseRows === 'function' ? filterBaseRows : defaultSortRows), [filterBaseRows]);
+  const visibilityStorageKey = columnVisibilityStorageKey || COLUMN_VISIBILITY_STORAGE_KEY;
   const gridRef = useRef(null);
   const revertingRef = useRef(false);
   const [baseDataRaw, setBaseDataRaw] = useState([]);
@@ -346,16 +369,14 @@ const PendientesLocalPage = () => {
           if (count > 1) duplicates.push(key);
         });
         setGlobalDuplicateKeys(duplicates);
-        const locales = data
-          .filter(row => normalizeLocalidad(row.LOCALIDAD) === 'local')
-          .sort((a, b) => parseFechaPedido(b.FECHA_PEDIDO) - parseFechaPedido(a.FECHA_PEDIDO));
-        setBaseDataRaw(locales);
+        const filteredRows = filterFn(data);
+        setBaseDataRaw(Array.isArray(filteredRows) ? filteredRows : []);
       })
       .catch(() => {
         setBaseDataRaw([]);
         setGlobalDuplicateKeys([]);
       });
-  }, []);
+  }, [filterFn]);
 
   const cargarNuevoEstatus = useCallback(() => {
     fetch(`${API_BASE_URL}/api/nuevo-estatus/obtener`)
@@ -421,7 +442,7 @@ const PendientesLocalPage = () => {
   }, [aplicarActualizacionSocket, cargarDatos, cargarNuevoEstatus]);
 
   useEffect(() => {
-    const storedRaw = localStorage.getItem(COLUMN_VISIBILITY_STORAGE_KEY);
+  const storedRaw = localStorage.getItem(visibilityStorageKey);
     if (storedRaw) {
       try {
         const stored = JSON.parse(storedRaw);
@@ -434,12 +455,12 @@ const PendientesLocalPage = () => {
     }
     setColumnVisibility(defaultColumnVisibility);
     setColumnVisibilityLoaded(true);
-  }, [defaultColumnVisibility]);
+  }, [defaultColumnVisibility, visibilityStorageKey]);
 
   useEffect(() => {
     if (!columnVisibilityLoaded) return;
-    localStorage.setItem(COLUMN_VISIBILITY_STORAGE_KEY, JSON.stringify(columnVisibility));
-  }, [columnVisibility, columnVisibilityLoaded]);
+    localStorage.setItem(visibilityStorageKey, JSON.stringify(columnVisibility));
+  }, [columnVisibility, columnVisibilityLoaded, visibilityStorageKey]);
 
   useEffect(() => {
     if (!columnVisibilityLoaded) return;
@@ -618,7 +639,7 @@ const PendientesLocalPage = () => {
 <html lang="es">
 <head>
   <meta charset="utf-8" />
-  <title>Pendientes Local</title>
+  <title>${pageTitleText}</title>
   <style>
     @page { size: landscape; margin: 12mm; }
     body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
@@ -645,7 +666,7 @@ const PendientesLocalPage = () => {
   </style>
 </head>
 <body style="margin:12mm;">
-  <h1>Pendientes Local</h1>
+  <h1>${pageTitleText}</h1>
   <table>
     <thead><tr>${headerHtml}</tr></thead>
     <tbody>${rowsHtml}</tbody>
@@ -679,7 +700,7 @@ const PendientesLocalPage = () => {
       console.error('No se pudo preparar la impresión:', err);
       alert('No se pudo preparar la impresión.');
     }
-  }, [columnDefs, columnVisibility, columnVisibilityLoaded]);
+  }, [columnDefs, columnVisibility, columnVisibilityLoaded, pageTitleText]);
 
   const updateInspectorForNode = useCallback((node, field, updater) => {
     setCellInspector(prev => {
@@ -1117,11 +1138,11 @@ const PendientesLocalPage = () => {
 
     const worksheet = XLSX.utils.aoa_to_sheet([headerRow, ...rows]);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Pendientes Local');
+    XLSX.utils.book_append_sheet(workbook, worksheet, resolvedSheetName || pageTitleText);
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const fileName = `pendientes-local-${timestamp}.xlsx`;
+    const fileName = `${exportFilePrefix}-${timestamp}.xlsx`;
     XLSX.writeFile(workbook, fileName);
-  }, [columnDefs]);
+  }, [columnDefs, exportFilePrefix, pageTitleText, resolvedSheetName]);
 
   useEffect(() => {
     if (!cellInspector || !cellInspector.editable) {
@@ -1168,10 +1189,12 @@ const PendientesLocalPage = () => {
 
   return (
     <div style={{ padding: '24px' }}>
-      <h2 style={{ marginBottom: 16 }}>Pendientes Local</h2>
-      <p style={{ marginTop: 0, color: '#6b7280' }}>
-        Registros cuya localidad corresponde al equipo local.
-      </p>
+      <h2 style={{ marginBottom: 16 }}>{pageTitleText}</h2>
+      {pageSubtitleText && (
+        <p style={{ marginTop: 0, color: '#6b7280' }}>
+          {pageSubtitleText}
+        </p>
+      )}
       <section
         style={{
           background: '#f8fafc',
@@ -1545,5 +1568,32 @@ const PendientesLocalPage = () => {
     </div>
   );
 };
+
+const basePageDefaults = {
+  pageTitle: 'Pendientes',
+  pageSubtitle: '',
+  filterBaseRows: defaultSortRows,
+  exportFilePrefix: 'pendientes',
+  exportSheetName: 'Pendientes',
+  columnVisibilityStorageKey: COLUMN_VISIBILITY_STORAGE_KEY
+};
+
+const localPageConfig = {
+  ...basePageDefaults,
+  pageTitle: 'Pendientes Local',
+  pageSubtitle: 'Registros cuya localidad corresponde al equipo local.',
+  filterBaseRows: filterLocalRows,
+  exportFilePrefix: 'pendientes-local',
+  exportSheetName: 'Pendientes Local',
+  columnVisibilityStorageKey: 'baseDatosColumnVisibility-local'
+};
+
+const PendientesLocalPage = (props) => (
+  <PendientesPage {...localPageConfig} {...props} />
+);
+
+export const createPendientesPage = (config = {}) => (props) => (
+  <PendientesPage {...basePageDefaults} {...config} {...props} />
+);
 
 export default PendientesLocalPage;

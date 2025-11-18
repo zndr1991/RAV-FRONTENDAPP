@@ -1387,7 +1387,6 @@ const BaseDatosPage = () => {
   const inspectorHeader = inspectorState?.header ?? '';
   const inspectorValue = inspectorState?.value ?? '';
   const inspectorRowData = inspectorState?.data || null;
-  const inspectorRowId = inspectorRowData?.id;
   const inspectorIsEditable = inspectorField
     ? canEditField(inspectorField) && !inspectorState?.isCommitting
     : false;
