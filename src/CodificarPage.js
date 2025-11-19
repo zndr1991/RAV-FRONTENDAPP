@@ -1142,6 +1142,70 @@ ITEM: ${params.data.ITEM || ""}`
               </button>
             </div>
 
+            <div className="section-card action-bar">
+              <div className="metrics">
+                <span className="metric metric-total">Filas: {rowData.length}</span>
+                <span className="metric metric-selected">Seleccionadas: {selectedCount}</span>
+              </div>
+              <div className="action-controls">
+                <input
+                  type="file"
+                  accept=".xlsx, .xls"
+                  ref={fileInputRef}
+                  style={{ display: 'none' }}
+                  onChange={handleFileUpload}
+                />
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => fileInputRef.current.click()}
+                >
+                  Subir Excel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={handleLoadData}
+                  disabled={!puedeCargar}
+                >
+                  Cargar información
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={handleSave}
+                >
+                  Guardar información
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={handleUndo}
+                  disabled={!canUndo}
+                >
+                  Deshacer cambio
+                </button>
+                {esSupervisor && (
+                  <button
+                    type="button"
+                    className="btn btn-danger"
+                    onClick={handleDeleteSelected}
+                    disabled={selectedCount === 0}
+                  >
+                    Borrar seleccionados
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="btn btn-warning"
+                  onClick={handleEnviarSeleccionados}
+                  disabled={selectedCount === 0}
+                >
+                  Enviar seleccionados a base de datos
+                </button>
+              </div>
+            </div>
+
             <div className="section-card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
                 <div>
@@ -1266,70 +1330,6 @@ ITEM: ${params.data.ITEM || ""}`
                 </div>
               </div>
             )}
-
-            <div className="section-card action-bar">
-              <div className="metrics">
-                <span className="metric metric-total">Filas: {rowData.length}</span>
-                <span className="metric metric-selected">Seleccionadas: {selectedCount}</span>
-              </div>
-              <div className="action-controls">
-                <input
-                  type="file"
-                  accept=".xlsx, .xls"
-                  ref={fileInputRef}
-                  style={{ display: 'none' }}
-                  onChange={handleFileUpload}
-                />
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => fileInputRef.current.click()}
-                >
-                  Subir Excel
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={handleLoadData}
-                  disabled={!puedeCargar}
-                >
-                  Cargar información
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  onClick={handleSave}
-                >
-                  Guardar información
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={handleUndo}
-                  disabled={!canUndo}
-                >
-                  Deshacer cambio
-                </button>
-                {esSupervisor && (
-                  <button
-                    type="button"
-                    className="btn btn-danger"
-                    onClick={handleDeleteSelected}
-                    disabled={selectedCount === 0}
-                  >
-                    Borrar seleccionados
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className="btn btn-warning"
-                  onClick={handleEnviarSeleccionados}
-                  disabled={selectedCount === 0}
-                >
-                  Enviar seleccionados a base de datos
-                </button>
-              </div>
-            </div>
 
             <div className="section-card grid-card">
               <div className="ag-theme-alpine ag-grid-wrapper">
