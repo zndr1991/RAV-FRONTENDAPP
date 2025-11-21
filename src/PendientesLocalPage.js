@@ -38,6 +38,7 @@ const normalizeStatus = (value) => (
 const ALLOWED_STATUS = new Set(
   ['Entregado', 'En Procesamiento', 'Facturado', 'Aguardando Confirmacion'].map(normalizeStatus)
 );
+const ESTATUS2_ALWAYS_ALLOWED = new Set(['cambio', 'correo']);
 const ROLE_RESTRICTED_FIELDS = new Set(['ESTATUS_LOCAL', 'ESTATUS_FORANEO', 'ESTATUS2']);
 const UNRESTRICTED_EDITABLE_FIELDS = new Set(['LOCALIDAD']);
 const CAPTURA_EDITABLE_FIELDS = new Set(['CHOFER']);
@@ -297,7 +298,7 @@ const PendientesPage = ({
       ? enrichedRows.filter(row => {
         const normalizedNuevo = normalizeStatus(row.NUEVO_ESTATUS);
         const normalizedEstatus2 = normalizeStatus(row.ESTATUS2);
-        if (normalizedEstatus2 === 'cambio') return true;
+        if (ESTATUS2_ALWAYS_ALLOWED.has(normalizedEstatus2)) return true;
         return normalizedNuevo === '' || ALLOWED_STATUS.has(normalizedNuevo);
       })
       : []
