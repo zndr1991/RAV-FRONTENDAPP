@@ -1544,7 +1544,7 @@ const PendientesPage = ({
           enableBrowserTooltips={true}
           enableCellTextSelection={true}
           suppressRowClickSelection={true}
-          rowMultiSelectWithClick={true}
+          rowMultiSelectWithClick={false}
           deltaRowDataMode={true}
           defaultColDef={{
             resizable: true,
