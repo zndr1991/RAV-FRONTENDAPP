@@ -1394,6 +1394,8 @@ const BaseDatosPage = () => {
   const inspectorPedidoLabel = inspectorPedidoValue == null ? '' : String(inspectorPedidoValue).trim();
   const inspectorSiniestroValue = inspectorRowData?.SINIESTRO;
   const inspectorSiniestroLabel = inspectorSiniestroValue == null ? '' : String(inspectorSiniestroValue).trim();
+  const inspectorItemValue = inspectorRowData?.ITEM;
+  const inspectorItemLabel = inspectorItemValue == null ? '' : String(inspectorItemValue).trim();
   const inspectorModeloValue = inspectorRowData?.MODELO;
   const inspectorAnioValue = inspectorRowData?.ANIO;
   const inspectorModeloAnioLabel = [inspectorModeloValue, inspectorAnioValue]
@@ -1826,6 +1828,10 @@ const BaseDatosPage = () => {
                       <span>
                         <span style={{ fontWeight: 600, color: '#374151' }}>Siniestro:</span>{' '}
                         {inspectorSiniestroLabel || 'Sin valor'}
+                      </span>
+                      <span>
+                        <span style={{ fontWeight: 600, color: '#374151' }}>Item:</span>{' '}
+                        {inspectorItemLabel || 'Sin valor'}
                       </span>
                       <span>
                         <span style={{ fontWeight: 600, color: '#374151' }}>Origen:</span>{' '}

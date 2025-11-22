@@ -1174,6 +1174,8 @@ const PendientesPage = ({
   const inspectorPedidoLabel = inspectorPedidoValue == null ? '' : String(inspectorPedidoValue).trim();
   const inspectorSiniestroValue = cellInspector?.rowNode?.data?.SINIESTRO;
   const inspectorSiniestroLabel = inspectorSiniestroValue == null ? '' : String(inspectorSiniestroValue).trim();
+  const inspectorItemValue = cellInspector?.rowNode?.data?.ITEM;
+  const inspectorItemLabel = inspectorItemValue == null ? '' : String(inspectorItemValue).trim();
   const inspectorModeloValue = cellInspector?.rowNode?.data?.MODELO;
   const inspectorAnioValue = cellInspector?.rowNode?.data?.ANIO;
   const inspectorModeloAnioLabel = [inspectorModeloValue, inspectorAnioValue]
@@ -1262,6 +1264,10 @@ const PendientesPage = ({
                   <span>
                     <span style={{ fontWeight: 600, color: '#374151' }}>Siniestro:</span>{' '}
                     {inspectorSiniestroLabel || 'Sin valor'}
+                  </span>
+                  <span>
+                    <span style={{ fontWeight: 600, color: '#374151' }}>Item:</span>{' '}
+                    {inspectorItemLabel || 'Sin valor'}
                   </span>
                   <span>
                     <span style={{ fontWeight: 600, color: '#374151' }}>Origen:</span>{' '}

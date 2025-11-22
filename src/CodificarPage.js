@@ -582,6 +582,9 @@ const CodificarPage = () => {
   const inspectorSiniestroLabel = inspectorRowData && inspectorRowData.SINIESTRO != null
     ? String(inspectorRowData.SINIESTRO).trim()
     : '';
+  const inspectorItemLabel = inspectorRowData && inspectorRowData.ITEM != null
+    ? String(inspectorRowData.ITEM).trim()
+    : '';
   const inspectorModeloAnioLabel = [inspectorRowData?.MODELO, inspectorRowData?.ANIO]
     .map(val => (val == null ? '' : String(val).trim()))
     .filter(Boolean)
@@ -1252,6 +1255,10 @@ ITEM: ${params.data.ITEM || ""}`
                         <span>
                           <span style={{ fontWeight: 600, color: '#374151' }}>Siniestro:</span>{' '}
                           {inspectorSiniestroLabel || 'Sin valor'}
+                        </span>
+                        <span>
+                          <span style={{ fontWeight: 600, color: '#374151' }}>Item:</span>{' '}
+                          {inspectorItemLabel || 'Sin valor'}
                         </span>
                         <span>
                           <span style={{ fontWeight: 600, color: '#374151' }}>Origen:</span>{' '}

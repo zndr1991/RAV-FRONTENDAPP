@@ -12,6 +12,7 @@ ModuleRegistry.registerModules([AllCommunityModule]);
 
 const CAPTURA_EDITABLE_FIELDS = new Set(['CODIGO', 'CHOFER']);
 const COLUMN_VISIBILITY_STORAGE_KEY = 'capturaColumnVisibility';
+const CAPTURA_HISTORY_LIMIT = 3;
 
 const normalizarTaller = (valor) => {
   if (!valor) return '';
@@ -29,6 +30,43 @@ const buildSiniestroItemKey = (siniestro, item) => {
 
 const extractSiniestro = (row) => row?.SINIESTRO ?? row?.siniestro ?? row?.Siniestro ?? '';
 const extractItem = (row) => row?.ITEM ?? row?.item ?? row?.Item ?? '';
+const parseTimestampHistory = (history) => {
+  if (!Array.isArray(history)) return [];
+  return history
+    .map((value) => {
+      if (!value) return null;
+      const date = value instanceof Date ? value : new Date(value);
+      return Number.isNaN(date.getTime()) ? null : date;
+    })
+    .filter(Boolean)
+    .slice(0, CAPTURA_HISTORY_LIMIT);
+};
+
+const formatTimestamp = (date) => {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString('es-MX', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+};
+const buildCapturaRowIdentity = (row) => {
+  if (!row || typeof row !== 'object') return '';
+  if (row.id !== undefined && row.id !== null) {
+    return `id:${row.id}`;
+  }
+  const pedidoRaw = row.PEDIDO ?? row.pedido ?? row.Pedido ?? '';
+  const pedido = pedidoRaw == null ? '' : String(pedidoRaw).trim();
+  const siniestroItemKey = buildSiniestroItemKey(extractSiniestro(row), extractItem(row));
+  if (pedido || siniestroItemKey) {
+    return `pedido:${pedido}::${siniestroItemKey}`;
+  }
+  return JSON.stringify(row);
+};
 
 const parseCostoToNumber = (raw) => {
   if (raw === null || raw === undefined || raw === '') return NaN;
@@ -284,7 +322,7 @@ function CapturaPage() {
   const [rowData, setRowData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [lastUpdated, setLastUpdated] = useState(null);
+  const [lastUpdatedHistory, setLastUpdatedHistory] = useState([]);
   const [selectedCount, setSelectedCount] = useState(0);
   const [marking, setMarking] = useState(false);
   const [localidades, setLocalidades] = useState([]);
@@ -295,6 +333,7 @@ function CapturaPage() {
   const [primarySearchText, setPrimarySearchText] = useState('');
   const [secondarySearchText, setSecondarySearchText] = useState('');
   const gridRef = useRef(null);
+  const previousRowIdsRef = useRef(new Set());
   const usuario = useMemo(() => {
     try {
       return JSON.parse(localStorage.getItem('usuario') || '{}');
@@ -493,6 +532,12 @@ function CapturaPage() {
     return result;
   }, [applySearchFilter, primarySearchText, rowData, secondarySearchText]);
 
+  const formattedHistory = useMemo(() => (
+    lastUpdatedHistory
+      .map((date) => formatTimestamp(date))
+      .filter(Boolean)
+  ), [lastUpdatedHistory]);
+
   const getRowClass = useCallback((params) => {
     const data = params?.data;
     if (!data) return '';
@@ -533,27 +578,61 @@ function CapturaPage() {
       if (!res.ok) {
         throw new Error(`Error ${res.status}`);
       }
-      const data = await res.json();
-      if (!Array.isArray(data)) {
+      const payload = await res.json();
+      const inboundTimestamp = typeof payload?.lastInboundAt === 'string' ? payload.lastInboundAt : null;
+      const inboundDate = inboundTimestamp ? new Date(inboundTimestamp) : null;
+      const parsedInboundDate = inboundDate && !Number.isNaN(inboundDate.getTime()) ? inboundDate : null;
+      const payloadHistory = parseTimestampHistory(payload?.lastInboundHistory || payload?.history);
+      const inboundHistory = payloadHistory.length
+        ? payloadHistory
+        : (parsedInboundDate ? [parsedInboundDate] : []);
+      const rows = Array.isArray(payload)
+        ? payload
+        : (Array.isArray(payload?.rows) ? payload.rows : null);
+      if (!Array.isArray(rows)) {
         setRowData([]);
-        setLastUpdated(new Date());
+        previousRowIdsRef.current = new Set();
+        if (inboundHistory.length) {
+          setLastUpdatedHistory(inboundHistory);
+        }
         return;
       }
-      const sorted = [...data].sort((a, b) => {
+      const sorted = [...rows].sort((a, b) => {
         const fechaA = parseFechaPedido(a.FECHA_PEDIDO);
         const fechaB = parseFechaPedido(b.FECHA_PEDIDO);
         return fechaB - fechaA;
       });
+      const newRowIds = new Set();
+      let detectedNewRows = sorted.length > 0 && previousRowIdsRef.current.size === 0;
+      sorted.forEach((row) => {
+        const identity = buildCapturaRowIdentity(row);
+        if (!identity) return;
+        newRowIds.add(identity);
+        if (!previousRowIdsRef.current.has(identity)) {
+          detectedNewRows = true;
+        }
+      });
+      previousRowIdsRef.current = newRowIds;
       setRowData(sorted);
       if (gridRef.current) {
         gridRef.current.api.deselectAll();
       }
       setSelectedCount(0);
-      setLastUpdated(new Date());
+      setLastUpdatedHistory(prev => {
+        if (inboundHistory.length) {
+          return inboundHistory;
+        }
+        if (detectedNewRows) {
+          const syntheticHistory = [new Date(), ...prev];
+          return syntheticHistory.slice(0, CAPTURA_HISTORY_LIMIT);
+        }
+        return prev;
+      });
       fetchGlobalDuplicates();
     } catch (err) {
       setRowData([]);
       setError('No se pudo cargar la información. Intenta nuevamente.');
+      previousRowIdsRef.current = new Set();
     } finally {
       setLoading(false);
     }
@@ -600,6 +679,19 @@ function CapturaPage() {
     if (!puedeVer) return undefined;
     const socket = socketIOClient(SOCKET_URL);
     const handleExcelUpdate = (payload) => {
+      if (payload?.type === 'captura_inbound') {
+        const incomingHistory = parseTimestampHistory(payload.history || [payload.lastInboundAt]);
+        if (incomingHistory.length) {
+          setLastUpdatedHistory(incomingHistory);
+        } else if (typeof payload.lastInboundAt === 'string') {
+          const inbound = new Date(payload.lastInboundAt);
+          if (!Number.isNaN(inbound.getTime())) {
+            setLastUpdatedHistory(prev => [inbound, ...prev].slice(0, CAPTURA_HISTORY_LIMIT));
+          }
+        }
+        cargarDatos();
+        return;
+      }
       const targetId = payload?.id !== undefined ? Number(payload.id) : NaN;
       if (
         payload
@@ -989,21 +1081,20 @@ function CapturaPage() {
             <span className="captura-summary__label">Evidencias por revisar</span>
             <span className="captura-summary__value">—</span>
           </div>
-          <div className="captura-summary__item">
-            <span className="captura-summary__label">Última actualización</span>
-            <span className="captura-summary__value">
-              {lastUpdated
-                ? lastUpdated.toLocaleString('es-MX', {
-                    day: '2-digit',
-                    month: '2-digit',
-                    year: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    second: '2-digit',
-                    hour12: false,
-                  })
-                : 'Sin datos'}
-            </span>
+          <div className="captura-summary__item captura-summary__item--history">
+            <span className="captura-summary__label">Última hora de codificación</span>
+            {formattedHistory.length ? (
+              <div className="captura-summary__history">
+                {formattedHistory.map((value, index) => (
+                  <div key={`${value}-${index}`} className="captura-summary__history-row">
+                    <span className="captura-summary__history-dot" aria-hidden="true" />
+                    <span className="captura-summary__history-value">{value}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <span className="captura-summary__value captura-summary__value--muted">Sin datos</span>
+            )}
           </div>
         </div>
       </section>
